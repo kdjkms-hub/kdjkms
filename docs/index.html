@@ -54,6 +54,8 @@
     font-variant-numeric: tabular-nums; font-size: 0.8rem; color: var(--ink-muted);
   }
   .live-badge { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; letter-spacing: 0.06em; color: var(--ink); }
+  .visit-stats { color: var(--ink-muted); }
+  .visit-stats b { color: var(--ink); font-weight: 700; }
   .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(47,158,91,0.5); animation: pulse 1.8s ease-out infinite; }
   .live-dot.error { background: var(--danger); animation: none; }
   @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
@@ -125,6 +127,7 @@
     <div class="masthead-meta">
       <span class="live-badge"><span class="live-dot" id="liveDot"></span><span id="liveText">연결 중</span></span>
       <span id="clock">--:--:--</span>
+      <span id="visitStats" class="visit-stats"></span>
     </div>
   </div>
 
@@ -196,7 +199,27 @@
   var clockEl = document.getElementById("clock");
   var liveDot = document.getElementById("liveDot");
   var liveText = document.getElementById("liveText");
+  var visitStatsEl = document.getElementById("visitStats");
   var lastRankMap = {};
+
+  function logVisit() {
+    fetch(SUPABASE_URL + "/rest/v1/page_visits", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json", "Prefer": "return=minimal" }, sbHeaders()),
+      body: "{}"
+    }).catch(function () {});
+  }
+
+  function loadVisitStats() {
+    fetch(SUPABASE_URL + "/rest/v1/visit_stats?select=today_unique,total_unique", { headers: sbHeaders() })
+      .then(function (res) { return res.json(); })
+      .then(function (rows) {
+        if (!rows || !rows.length) return;
+        var stats = rows[0];
+        visitStatsEl.innerHTML = "오늘 <b>" + stats.today_unique + "</b>명 · 누적 <b>" + stats.total_unique + "</b>명";
+      })
+      .catch(function () {});
+  }
 
   function renderTabs(container, list, keyProp, activeKey, onPick) {
     container.innerHTML = "";
@@ -395,6 +418,18 @@
   setInterval(loadLatest, POLL_MS);
   tickClock();
   setInterval(tickClock, 1000);
+
+  try {
+    var todayKey = "droprank_visited_" + new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
+    if (!sessionStorage.getItem(todayKey)) {
+      sessionStorage.setItem(todayKey, "1");
+      logVisit();
+    }
+  } catch (e) {
+    logVisit();
+  }
+  loadVisitStats();
+  setInterval(loadVisitStats, 30000);
 })();
 </script>
 </body>

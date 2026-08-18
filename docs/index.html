@@ -65,6 +65,18 @@
 
   .tear { margin: 1.5rem 0 1.25rem; border: none; border-top: 1.5px dashed var(--line); }
 
+  .filters { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 1.5rem; }
+  .segmented { display: inline-flex; gap: 0.3rem; }
+  .tabs { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: thin; }
+  .tab {
+    flex: 0 0 auto; padding: 0.45rem 0.85rem; border-radius: 3px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--ink-muted); font-size: 0.82rem; font-weight: 600;
+    letter-spacing: 0.01em; cursor: pointer;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tab[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
   .list-header { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 0.6rem; color: var(--ink-muted); font-size: 0.78rem; }
   .list-header .err { color: var(--danger); font-weight: 600; }
 
@@ -118,8 +130,13 @@
 
   <hr class="tear" />
 
+  <div class="filters">
+    <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
+    <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
+  </div>
+
   <div class="list-header">
-    <span>전체 · 실시간 · 5만원 이상</span>
+    <span id="listCaption">전체 · 전체 · 실시간 · 5만원 이상</span>
     <span id="updatedAt">불러오는 중…</span>
   </div>
 
@@ -137,16 +154,77 @@
   var SUPABASE_URL = "https://blykenseazunyrxkslkm.supabase.co";
   var SUPABASE_KEY = "sb_publishable_YzZ7-HuyTWfwR9SQ_A6n7Q_imyR0Jjh";
   var TABLE = "ranking_snapshots";
-  var GF = "A";
-  var CATEGORY_CODE = "000";
   var POLL_MS = 20000;
 
+  var GENDERS = [
+    { key: "A", label: "전체" },
+    { key: "W", label: "여성" },
+    { key: "M", label: "남성" }
+  ];
+  var CATEGORIES = [
+    { code: "000", label: "전체" },
+    { code: "001", label: "상의" },
+    { code: "002", label: "아우터" },
+    { code: "003", label: "바지" },
+    { code: "100", label: "원피스/스커트" },
+    { code: "103", label: "신발" },
+    { code: "004", label: "가방" },
+    { code: "120", label: "모자" },
+    { code: "101", label: "소품" },
+    { code: "026", label: "속옷/홈웨어" },
+    { code: "017", label: "스포츠/레저" },
+    { code: "104", label: "뷰티" },
+    { code: "102", label: "디지털/라이프" },
+    { code: "106", label: "키즈" }
+  ];
+
+  var state = { gf: "A", categoryCode: "000" };
+
+  var genderTabsEl = document.getElementById("genderTabs");
+  var categoryTabsEl = document.getElementById("categoryTabs");
+  var captionEl = document.getElementById("listCaption");
   var listEl = document.getElementById("list");
   var updatedEl = document.getElementById("updatedAt");
   var clockEl = document.getElementById("clock");
   var liveDot = document.getElementById("liveDot");
   var liveText = document.getElementById("liveText");
   var lastRankMap = {};
+
+  function renderTabs(container, list, keyProp, activeKey, onPick) {
+    container.innerHTML = "";
+    list.forEach(function (item) {
+      var key = item[keyProp];
+      var btn = document.createElement("button");
+      btn.className = "tab";
+      btn.type = "button";
+      btn.textContent = item.label;
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-selected", key === activeKey ? "true" : "false");
+      btn.addEventListener("click", function () {
+        if (key === activeKey) return;
+        onPick(key);
+      });
+      container.appendChild(btn);
+    });
+  }
+
+  function renderFilterTabs() {
+    renderTabs(genderTabsEl, GENDERS, "key", state.gf, function (key) {
+      state.gf = key;
+      lastRankMap = {};
+      renderFilterTabs();
+      loadLatest();
+    });
+    renderTabs(categoryTabsEl, CATEGORIES, "code", state.categoryCode, function (code) {
+      state.categoryCode = code;
+      lastRankMap = {};
+      renderFilterTabs();
+      loadLatest();
+    });
+    var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
+    var catLabel = CATEGORIES.filter(function (c) { return c.code === state.categoryCode; })[0].label;
+    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · 5만원 이상";
+  }
 
   function fmtPrice(n) { return (n || 0).toLocaleString("ko-KR") + "원"; }
 
@@ -245,13 +323,16 @@
   }
 
   function loadLatest() {
+    var requestGf = state.gf;
+    var requestCategoryCode = state.categoryCode;
     var base = SUPABASE_URL + "/rest/v1/" + TABLE;
-    var latestUrl = base + "?select=fetched_at&gf=eq." + GF + "&category_code=eq." + CATEGORY_CODE +
+    var latestUrl = base + "?select=fetched_at&gf=eq." + requestGf + "&category_code=eq." + requestCategoryCode +
       "&order=fetched_at.desc&limit=1";
 
     fetch(latestUrl, { headers: sbHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (latest) {
+        if (requestGf !== state.gf || requestCategoryCode !== state.categoryCode) return;
         if (!latest.length) {
           renderRows([]);
           setLive("ok", "LIVE");
@@ -259,11 +340,12 @@
           return;
         }
         var ts = latest[0].fetched_at;
-        var batchUrl = base + "?select=*&gf=eq." + GF + "&category_code=eq." + CATEGORY_CODE +
+        var batchUrl = base + "?select=*&gf=eq." + requestGf + "&category_code=eq." + requestCategoryCode +
           "&fetched_at=eq." + encodeURIComponent(ts) + "&order=rank.asc";
         return fetch(batchUrl, { headers: sbHeaders() })
           .then(function (res) { return res.json(); })
           .then(function (rows) {
+            if (requestGf !== state.gf || requestCategoryCode !== state.categoryCode) return;
             renderRows(rows);
             var stamp = new Date(ts);
             updatedEl.textContent = "기록 시각 " + stamp.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" }) +
@@ -286,6 +368,7 @@
     clockEl.textContent = now.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" });
   }
 
+  renderFilterTabs();
   loadLatest();
   setInterval(loadLatest, POLL_MS);
   tickClock();

@@ -269,8 +269,11 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
-BACKGROUND_POLL_SECONDS = 60
-BACKGROUND_TARGETS = [("A", "000")]
+BACKGROUND_REQUEST_GAP_SECONDS = 3
+BACKGROUND_CYCLE_REST_SECONDS = 20
+BACKGROUND_TARGETS = [
+    (gf, category_code) for gf in sorted(ALLOWED_GF) for category_code in sorted(ALLOWED_CATEGORY)
+]
 
 
 def background_collector():
@@ -282,8 +285,9 @@ def background_collector():
                     _cache[(gf, category_code)] = {"ts": time.time(), "data": data}
                 log_snapshot_to_supabase(gf, category_code, data)
             except Exception as exc:
-                print("background collector error:", exc)
-        time.sleep(BACKGROUND_POLL_SECONDS)
+                print("background collector error:", gf, category_code, exc)
+            time.sleep(BACKGROUND_REQUEST_GAP_SECONDS)
+        time.sleep(BACKGROUND_CYCLE_REST_SECONDS)
 
 
 if __name__ == "__main__":

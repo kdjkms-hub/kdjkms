@@ -37,6 +37,61 @@ _cache_lock = threading.Lock()
 _fetch_locks = {}
 _fetch_locks_guard = threading.Lock()
 
+SUPABASE_CONFIG_PATH = BASE_DIR / "supabase_config.json"
+try:
+    _supabase = json.loads(SUPABASE_CONFIG_PATH.read_text(encoding="utf-8"))
+except FileNotFoundError:
+    _supabase = None
+
+
+def log_snapshot_to_supabase(gf, category_code, data):
+    if not _supabase:
+        return
+    fetched_at = time.time()
+    source_updated_at = data.get("sourceUpdatedAt")
+    rows = [
+        {
+            "gf": gf,
+            "category_code": category_code,
+            "rank": it["rank"],
+            "product_id": it["id"],
+            "brand": it["brand"],
+            "name": it["name"],
+            "price": it["price"],
+            "original_price": it["originalPrice"],
+            "discount": it["discount"],
+            "sold_out": it["soldOut"],
+            "source_updated_at": (
+                time.strftime("%Y-%m-%dT%H:%M:%S+09:00", time.localtime(source_updated_at / 1000))
+                if source_updated_at else None
+            ),
+        }
+        for it in data.get("items", [])
+    ]
+    if not rows:
+        return
+
+    def _send():
+        try:
+            body = json.dumps(rows).encode("utf-8")
+            req = urllib.request.Request(
+                _supabase["url"].rstrip("/") + "/rest/v1/" + _supabase.get("table", "ranking_snapshots"),
+                data=body,
+                method="POST",
+                headers={
+                    "apikey": _supabase["key"],
+                    "Authorization": "Bearer " + _supabase["key"],
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+        except Exception as exc:
+            print("supabase log failed:", exc)
+
+    threading.Thread(target=_send, daemon=True).start()
+
 
 def get_fetch_lock(key):
     with _fetch_locks_guard:
@@ -159,6 +214,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ts = time.time()
                 with _cache_lock:
                     _cache[key] = {"ts": ts, "data": data}
+                log_snapshot_to_supabase(gf, category_code, data)
                 self._send_json({**data, "fetchedAt": ts, "cached": False})
             except Exception as exc:
                 if cached:
@@ -213,8 +269,26 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
+BACKGROUND_POLL_SECONDS = 60
+BACKGROUND_TARGETS = [("A", "000")]
+
+
+def background_collector():
+    while True:
+        for gf, category_code in BACKGROUND_TARGETS:
+            try:
+                data = fetch_ranking(gf, category_code)
+                with _cache_lock:
+                    _cache[(gf, category_code)] = {"ts": time.time(), "data": data}
+                log_snapshot_to_supabase(gf, category_code, data)
+            except Exception as exc:
+                print("background collector error:", exc)
+        time.sleep(BACKGROUND_POLL_SECONDS)
+
+
 if __name__ == "__main__":
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    threading.Thread(target=background_collector, daemon=True).start()
     print(f"DropRank Live -> http://127.0.0.1:{PORT}")
     try:
         server.serve_forever()

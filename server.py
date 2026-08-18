@@ -28,6 +28,32 @@ ALLOWED_CATEGORY = {
     "004", "120", "101", "026", "017", "102", "106",
 }
 
+# a-bly requires a session token minted by a real browser (Cloudflare-gated
+# HTML pages). If requests start failing with 401, this token has expired
+# and needs to be re-captured from a live browser session and pasted in here.
+ABLY_UPSTREAM = "https://api.a-bly.com/api/v2/goods/"
+ABLY_HEADERS = {
+    "X-Anonymous-Token": (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJhbm9ueW1vdXNfaWQiOiIxMjc4NDc3MDIwIiwiaWF0IjoxNzg3MDMyNDMxfQ."
+        "IwN3zqYYDKgFsLk6nAzZMc-E6VqM17NGk7jIelH3OP8"
+    ),
+    "X-Device-Type": "PCWeb",
+    "X-App-Version": "0.1.0",
+    "X-Web-Type": "Web",
+    "X-Device-Id": "49c535d4-d78a-4bb1-8b87-ce653be3e335",
+    "Accept": "application/json, text/plain, */*",
+}
+ABLY_CATEGORIES = {
+    "000": None,
+    "001": 1,
+    "002": 2,
+    "003": 3,
+    "004": 4,
+    "659": 659,
+    "027": 27,
+}
+
 CACHE_TTL_SECONDS = 45
 UPSTREAM_TIMEOUT_SECONDS = 12
 MIN_PRICE = 50000
@@ -89,6 +115,53 @@ def log_snapshot_to_supabase(gf, category_code, data):
                 resp.read()
         except Exception as exc:
             print("supabase log failed:", exc)
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def log_ably_snapshot_to_supabase(category_code, data):
+    if not _supabase:
+        return
+    source_updated_at = data.get("sourceUpdatedAt")
+    rows = [
+        {
+            "category_code": category_code,
+            "rank": it["rank"],
+            "product_id": it["id"],
+            "brand": it["brand"],
+            "name": it["name"],
+            "price": it["price"],
+            "original_price": it["originalPrice"],
+            "discount": it["discount"],
+            "sold_out": it["soldOut"],
+            "source_updated_at": (
+                time.strftime("%Y-%m-%dT%H:%M:%S+09:00", time.localtime(source_updated_at / 1000))
+                if source_updated_at else None
+            ),
+        }
+        for it in data.get("items", [])
+    ]
+    if not rows:
+        return
+
+    def _send():
+        try:
+            body = json.dumps(rows).encode("utf-8")
+            req = urllib.request.Request(
+                _supabase["url"].rstrip("/") + "/rest/v1/ably_ranking_snapshots",
+                data=body,
+                method="POST",
+                headers={
+                    "apikey": _supabase["key"],
+                    "Authorization": "Bearer " + _supabase["key"],
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+        except Exception as exc:
+            print("supabase ably log failed:", exc)
 
     threading.Thread(target=_send, daemon=True).start()
 
@@ -171,6 +244,51 @@ def fetch_ranking(gf, category_code):
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 
+def fetch_ably_ranking(category_code):
+    market_type_sno = ABLY_CATEGORIES[category_code]
+    params = {"filter": "best"}
+    if market_type_sno is not None:
+        params["market_type_sno"] = market_type_sno
+    url = ABLY_UPSTREAM + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers=ABLY_HEADERS)
+    with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT_SECONDS) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+
+    minutes_ago = raw.get("last_updated_before")
+    source_updated_at = (time.time() - minutes_ago * 60) * 1000 if minutes_ago is not None else None
+
+    items = []
+    for it in raw.get("goods", []):
+        rank = it.get("ranking")
+        if rank is None:
+            continue
+        price = it.get("price") or 0
+        discount = it.get("discount_rate") or 0
+        original_price = round(price / (1 - discount / 100)) if discount else price
+        market = it.get("market") or {}
+
+        items.append({
+            "rank": rank,
+            "id": it.get("sno"),
+            "brand": market.get("name", ""),
+            "name": it.get("name", ""),
+            "price": price,
+            "originalPrice": original_price,
+            "discount": discount,
+            "soldOut": bool(it.get("is_soldout")),
+            "image": it.get("image", ""),
+            "url": "https://m.a-bly.com/goods/" + str(it.get("sno", "")),
+            "labels": [],
+            "note": (str(it.get("sell_count")) + "개 구매중") if it.get("sell_count") else "",
+        })
+
+    items.sort(key=lambda x: x["rank"])
+    items = [it for it in items if it["price"] >= MIN_PRICE]
+    for idx, it in enumerate(items, start=1):
+        it["rank"] = idx
+    return {"items": items, "sourceUpdatedAt": source_updated_at}
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -230,6 +348,51 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         {"error": "무신사 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
                     )
 
+    def _handle_ably_ranking(self, query):
+        qs = urllib.parse.parse_qs(query)
+        category_code = qs.get("categoryCode", ["000"])[0] or "000"
+
+        if category_code not in ABLY_CATEGORIES:
+            self._send_json({"error": "invalid parameters"}, 400)
+            return
+
+        key = ("ably", category_code)
+        now = time.time()
+
+        with _cache_lock:
+            cached = _cache.get(key)
+        if cached and now - cached["ts"] < CACHE_TTL_SECONDS:
+            self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+            return
+
+        lock = get_fetch_lock(key)
+        with lock:
+            with _cache_lock:
+                cached = _cache.get(key)
+            if cached and time.time() - cached["ts"] < CACHE_TTL_SECONDS:
+                self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+                return
+            try:
+                data = fetch_ably_ranking(category_code)
+                ts = time.time()
+                with _cache_lock:
+                    _cache[key] = {"ts": ts, "data": data}
+                log_ably_snapshot_to_supabase(category_code, data)
+                self._send_json({**data, "fetchedAt": ts, "cached": False})
+            except Exception as exc:
+                if cached:
+                    self._send_json({
+                        **cached["data"],
+                        "fetchedAt": cached["ts"],
+                        "cached": True,
+                        "stale": True,
+                        "error": str(exc),
+                    })
+                else:
+                    self._send_json(
+                        {"error": "에이블리 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
+                    )
+
     def _handle_static(self, path):
         rel = path.lstrip("/") or "index.html"
         candidate = (PUBLIC_DIR / rel).resolve()
@@ -260,6 +423,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/ranking":
             self._handle_ranking(parsed.query)
+        elif parsed.path == "/api/ably-ranking":
+            self._handle_ably_ranking(parsed.query)
         else:
             self._handle_static(parsed.path)
 
@@ -286,6 +451,15 @@ def background_collector():
                 log_snapshot_to_supabase(gf, category_code, data)
             except Exception as exc:
                 print("background collector error:", gf, category_code, exc)
+            time.sleep(BACKGROUND_REQUEST_GAP_SECONDS)
+        for category_code in sorted(ABLY_CATEGORIES):
+            try:
+                data = fetch_ably_ranking(category_code)
+                with _cache_lock:
+                    _cache[("ably", category_code)] = {"ts": time.time(), "data": data}
+                log_ably_snapshot_to_supabase(category_code, data)
+            except Exception as exc:
+                print("background collector error: ably", category_code, exc)
             time.sleep(BACKGROUND_REQUEST_GAP_SECONDS)
         time.sleep(BACKGROUND_CYCLE_REST_SECONDS)
 

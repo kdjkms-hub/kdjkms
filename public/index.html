@@ -135,6 +135,7 @@
   <hr class="tear" />
 
   <div class="filters">
+    <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
     <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
@@ -157,27 +158,42 @@
 
 <script>
 (function () {
+  var SITES = [
+    { key: "musinsa", label: "무신사" },
+    { key: "ably", label: "에이블리" }
+  ];
   var GENDERS = [
     { key: "A", label: "전체" },
     { key: "W", label: "여성" },
     { key: "M", label: "남성" }
   ];
-  var CATEGORIES = [
-    { code: "000", label: "전체" },
-    { code: "001", label: "상의" },
-    { code: "002", label: "아우터" },
-    { code: "003", label: "바지" },
-    { code: "100", label: "원피스/스커트" },
-    { code: "103", label: "신발" },
-    { code: "004", label: "가방" },
-    { code: "120", label: "모자" },
-    { code: "101", label: "소품" },
-    { code: "026", label: "속옷/홈웨어" },
-    { code: "017", label: "스포츠/레저" },
-    { code: "104", label: "뷰티" },
-    { code: "102", label: "디지털/라이프" },
-    { code: "106", label: "키즈" }
-  ];
+  var CATEGORIES_BY_SITE = {
+    musinsa: [
+      { code: "000", label: "전체" },
+      { code: "001", label: "상의" },
+      { code: "002", label: "아우터" },
+      { code: "003", label: "바지" },
+      { code: "100", label: "원피스/스커트" },
+      { code: "103", label: "신발" },
+      { code: "004", label: "가방" },
+      { code: "120", label: "모자" },
+      { code: "101", label: "소품" },
+      { code: "026", label: "속옷/홈웨어" },
+      { code: "017", label: "스포츠/레저" },
+      { code: "104", label: "뷰티" },
+      { code: "102", label: "디지털/라이프" },
+      { code: "106", label: "키즈" }
+    ],
+    ably: [
+      { code: "000", label: "전체" },
+      { code: "001", label: "패션" },
+      { code: "002", label: "라이프" },
+      { code: "003", label: "뷰티" },
+      { code: "004", label: "디지털" },
+      { code: "659", label: "푸드" },
+      { code: "027", label: "플레이스" }
+    ]
+  };
 
   var PRICE_TIERS = [
     { key: 50000, label: "5만원 이상" },
@@ -185,12 +201,13 @@
   ];
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { gf: "A", categoryCode: "000", minPrice: 50000 };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000 };
   var lastRankMap = {};
   var lastItems = [];
   var pollTimer = null;
   var POLL_MS = 20000;
 
+  var siteTabsEl = document.getElementById("siteTabs");
   var genderTabsEl = document.getElementById("genderTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
   var priceTabsEl = document.getElementById("priceTabs");
@@ -222,13 +239,25 @@
   }
 
   function renderFilterTabs() {
+    var isAbly = state.site === "ably";
+    genderTabsEl.style.display = isAbly ? "none" : "";
+
+    renderTabs(siteTabsEl, SITES, "key", state.site, function (key) {
+      state.site = key;
+      state.categoryCode = "000";
+      state.gf = "A";
+      lastRankMap = {};
+      lastItems = [];
+      renderFilterTabs();
+      loadRanking(false);
+    });
     renderTabs(genderTabsEl, GENDERS, "key", state.gf, function (key) {
       state.gf = key;
       lastRankMap = {};
       renderFilterTabs();
       loadRanking(false);
     });
-    renderTabs(categoryTabsEl, CATEGORIES, "code", state.categoryCode, function (code) {
+    renderTabs(categoryTabsEl, CATEGORIES_BY_SITE[state.site], "code", state.categoryCode, function (code) {
       state.categoryCode = code;
       lastRankMap = {};
       renderFilterTabs();
@@ -240,10 +269,11 @@
       renderFilterTabs();
       renderFiltered(false);
     });
+    var siteLabel = SITES.filter(function (s) { return s.key === state.site; })[0].label;
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
-    var catLabel = CATEGORIES.filter(function (c) { return c.code === state.categoryCode; })[0].label;
+    var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
-    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · " + priceLabel;
+    captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
   }
 
   function renderFiltered(animate) {
@@ -397,8 +427,12 @@
   }
 
   function loadRanking(animate) {
-    var params = new URLSearchParams({ gf: state.gf, categoryCode: state.categoryCode });
-    fetch("/api/ranking?" + params.toString())
+    var isAbly = state.site === "ably";
+    var endpoint = isAbly ? "/api/ably-ranking" : "/api/ranking";
+    var params = isAbly
+      ? new URLSearchParams({ categoryCode: state.categoryCode })
+      : new URLSearchParams({ gf: state.gf, categoryCode: state.categoryCode });
+    fetch(endpoint + "?" + params.toString())
       .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
       .then(function (result) {
         if (!result.ok) throw new Error(result.body.error || "요청 실패");
@@ -408,7 +442,8 @@
 
         var stamp = body.sourceUpdatedAt ? new Date(body.sourceUpdatedAt) : new Date(body.fetchedAt * 1000);
         var timeStr = stamp.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" });
-        updatedEl.innerHTML = "무신사 기준 업데이트 " + timeStr + (body.cached ? " · 캐시" : "");
+        var sourceLabel = isAbly ? "에이블리" : "무신사";
+        updatedEl.innerHTML = sourceLabel + " 기준 업데이트 " + timeStr + (body.cached ? " · 캐시" : "");
 
         if (body.stale) {
           setLive("error", "일시 오류 · 이전 데이터 표시");

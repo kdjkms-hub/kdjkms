@@ -134,6 +134,7 @@
   <hr class="tear" />
 
   <div class="filters">
+    <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
     <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
@@ -147,9 +148,10 @@
   <div class="list" id="list"></div>
 
   <p class="foot-note">
-    이 페이지는 로컬 PC에서 돌아가는 수집기가 무신사 랭킹을 주기적으로 가져와 Supabase에 기록한 데이터를
-    그대로 보여주는 조회 전용 페이지입니다. 수집 PC가 꺼져 있으면 새 데이터가 더 이상 쌓이지 않고 마지막
-    기록만 표시됩니다. 실제 가격·재고는 무신사에서 다시 확인해주세요.
+    이 페이지는 무신사·에이블리 랭킹을 주기적으로 가져와 Supabase에 기록한 데이터를 그대로 보여주는
+    조회 전용 페이지입니다. 무신사는 GitHub Actions가 10분마다, 에이블리는 로컬 PC 수집기가 주기적으로
+    데이터를 채웁니다(에이블리는 세션 토큰 방식이라 토큰이 만료되면 수집이 잠시 멈출 수 있어요). 실제
+    가격·재고는 각 사이트에서 다시 확인해주세요.
   </p>
 </div>
 
@@ -157,39 +159,55 @@
 (function () {
   var SUPABASE_URL = "https://blykenseazunyrxkslkm.supabase.co";
   var SUPABASE_KEY = "sb_publishable_YzZ7-HuyTWfwR9SQ_A6n7Q_imyR0Jjh";
-  var TABLE = "ranking_snapshots";
+  var TABLE_BY_SITE = { musinsa: "ranking_snapshots", ably: "ably_ranking_snapshots" };
   var POLL_MS = 20000;
 
+  var SITES = [
+    { key: "musinsa", label: "무신사" },
+    { key: "ably", label: "에이블리" }
+  ];
   var GENDERS = [
     { key: "A", label: "전체" },
     { key: "W", label: "여성" },
     { key: "M", label: "남성" }
   ];
-  var CATEGORIES = [
-    { code: "000", label: "전체" },
-    { code: "001", label: "상의" },
-    { code: "002", label: "아우터" },
-    { code: "003", label: "바지" },
-    { code: "100", label: "원피스/스커트" },
-    { code: "103", label: "신발" },
-    { code: "004", label: "가방" },
-    { code: "120", label: "모자" },
-    { code: "101", label: "소품" },
-    { code: "026", label: "속옷/홈웨어" },
-    { code: "017", label: "스포츠/레저" },
-    { code: "104", label: "뷰티" },
-    { code: "102", label: "디지털/라이프" },
-    { code: "106", label: "키즈" }
-  ];
+  var CATEGORIES_BY_SITE = {
+    musinsa: [
+      { code: "000", label: "전체" },
+      { code: "001", label: "상의" },
+      { code: "002", label: "아우터" },
+      { code: "003", label: "바지" },
+      { code: "100", label: "원피스/스커트" },
+      { code: "103", label: "신발" },
+      { code: "004", label: "가방" },
+      { code: "120", label: "모자" },
+      { code: "101", label: "소품" },
+      { code: "026", label: "속옷/홈웨어" },
+      { code: "017", label: "스포츠/레저" },
+      { code: "104", label: "뷰티" },
+      { code: "102", label: "디지털/라이프" },
+      { code: "106", label: "키즈" }
+    ],
+    ably: [
+      { code: "000", label: "전체" },
+      { code: "001", label: "패션" },
+      { code: "002", label: "라이프" },
+      { code: "003", label: "뷰티" },
+      { code: "004", label: "디지털" },
+      { code: "659", label: "푸드" },
+      { code: "027", label: "플레이스" }
+    ]
+  };
 
   var PRICE_TIERS = [
     { key: 50000, label: "5만원 이상" },
     { key: 100000, label: "10만원 이상" }
   ];
 
-  var state = { gf: "A", categoryCode: "000", minPrice: 50000 };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000 };
   var lastItems = [];
 
+  var siteTabsEl = document.getElementById("siteTabs");
   var genderTabsEl = document.getElementById("genderTabs");
   var priceTabsEl = document.getElementById("priceTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
@@ -240,13 +258,25 @@
   }
 
   function renderFilterTabs() {
+    var isAbly = state.site === "ably";
+    genderTabsEl.style.display = isAbly ? "none" : "";
+
+    renderTabs(siteTabsEl, SITES, "key", state.site, function (key) {
+      state.site = key;
+      state.categoryCode = "000";
+      state.gf = "A";
+      lastRankMap = {};
+      lastItems = [];
+      renderFilterTabs();
+      loadLatest();
+    });
     renderTabs(genderTabsEl, GENDERS, "key", state.gf, function (key) {
       state.gf = key;
       lastRankMap = {};
       renderFilterTabs();
       loadLatest();
     });
-    renderTabs(categoryTabsEl, CATEGORIES, "code", state.categoryCode, function (code) {
+    renderTabs(categoryTabsEl, CATEGORIES_BY_SITE[state.site], "code", state.categoryCode, function (code) {
       state.categoryCode = code;
       lastRankMap = {};
       renderFilterTabs();
@@ -258,10 +288,11 @@
       renderFilterTabs();
       renderFiltered();
     });
+    var siteLabel = SITES.filter(function (s) { return s.key === state.site; })[0].label;
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
-    var catLabel = CATEGORIES.filter(function (c) { return c.code === state.categoryCode; })[0].label;
+    var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
-    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · " + priceLabel;
+    captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
   }
 
   function renderFiltered() {
@@ -296,7 +327,9 @@
       var delta = prevRank ? prevRank - rank : 0;
 
       var row = document.createElement("a");
-      row.href = "https://www.musinsa.com/products/" + it.product_id;
+      row.href = state.site === "ably"
+        ? "https://m.a-bly.com/goods/" + it.product_id
+        : "https://www.musinsa.com/products/" + it.product_id;
       row.target = "_blank";
       row.rel = "noopener";
       row.className = "row" + (it.sold_out ? " sold-out" : "");
@@ -367,16 +400,23 @@
   }
 
   function loadLatest() {
+    var requestSite = state.site;
     var requestGf = state.gf;
     var requestCategoryCode = state.categoryCode;
-    var base = SUPABASE_URL + "/rest/v1/" + TABLE;
-    var latestUrl = base + "?select=fetched_at&gf=eq." + requestGf + "&category_code=eq." + requestCategoryCode +
+    var isAbly = requestSite === "ably";
+    var base = SUPABASE_URL + "/rest/v1/" + TABLE_BY_SITE[requestSite];
+    var siteFilter = isAbly ? "" : "&gf=eq." + requestGf;
+    var latestUrl = base + "?select=fetched_at" + siteFilter + "&category_code=eq." + requestCategoryCode +
       "&order=fetched_at.desc&limit=1";
+
+    function stillCurrent() {
+      return requestSite === state.site && requestGf === state.gf && requestCategoryCode === state.categoryCode;
+    }
 
     fetch(latestUrl, { headers: sbHeaders() })
       .then(function (res) { return res.json(); })
       .then(function (latest) {
-        if (requestGf !== state.gf || requestCategoryCode !== state.categoryCode) return;
+        if (!stillCurrent()) return;
         if (!latest.length) {
           renderRows([]);
           setLive("ok", "LIVE");
@@ -384,12 +424,12 @@
           return;
         }
         var ts = latest[0].fetched_at;
-        var batchUrl = base + "?select=*&gf=eq." + requestGf + "&category_code=eq." + requestCategoryCode +
+        var batchUrl = base + "?select=*" + siteFilter + "&category_code=eq." + requestCategoryCode +
           "&fetched_at=eq." + encodeURIComponent(ts) + "&order=rank.asc";
         return fetch(batchUrl, { headers: sbHeaders() })
           .then(function (res) { return res.json(); })
           .then(function (rows) {
-            if (requestGf !== state.gf || requestCategoryCode !== state.categoryCode) return;
+            if (!stillCurrent()) return;
             lastItems = rows;
             renderFiltered();
             var stamp = new Date(ts);

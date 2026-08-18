@@ -132,6 +132,7 @@
 
   <div class="filters">
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
+    <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
   </div>
 
@@ -178,9 +179,16 @@
     { code: "106", label: "키즈" }
   ];
 
-  var state = { gf: "A", categoryCode: "000" };
+  var PRICE_TIERS = [
+    { key: 50000, label: "5만원 이상" },
+    { key: 100000, label: "10만원 이상" }
+  ];
+
+  var state = { gf: "A", categoryCode: "000", minPrice: 50000 };
+  var lastItems = [];
 
   var genderTabsEl = document.getElementById("genderTabs");
+  var priceTabsEl = document.getElementById("priceTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
   var captionEl = document.getElementById("listCaption");
   var listEl = document.getElementById("list");
@@ -221,9 +229,22 @@
       renderFilterTabs();
       loadLatest();
     });
+    renderTabs(priceTabsEl, PRICE_TIERS, "key", state.minPrice, function (key) {
+      state.minPrice = key;
+      lastRankMap = {};
+      renderFilterTabs();
+      renderFiltered();
+    });
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES.filter(function (c) { return c.code === state.categoryCode; })[0].label;
-    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · 5만원 이상";
+    var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
+    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · " + priceLabel;
+  }
+
+  function renderFiltered() {
+    var filtered = lastItems.filter(function (it) { return it.price >= state.minPrice; });
+    filtered.forEach(function (it, idx) { it.rank = idx + 1; });
+    renderRows(filtered);
   }
 
   function fmtPrice(n) { return (n || 0).toLocaleString("ko-KR") + "원"; }
@@ -346,7 +367,8 @@
           .then(function (res) { return res.json(); })
           .then(function (rows) {
             if (requestGf !== state.gf || requestCategoryCode !== state.categoryCode) return;
-            renderRows(rows);
+            lastItems = rows;
+            renderFiltered();
             var stamp = new Date(ts);
             updatedEl.textContent = "기록 시각 " + stamp.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" }) +
               " (" + stamp.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }) + ")";

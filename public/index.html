@@ -136,6 +136,7 @@
 
   <div class="filters">
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
+    <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
   </div>
 
@@ -178,14 +179,21 @@
     { code: "106", label: "키즈" }
   ];
 
+  var PRICE_TIERS = [
+    { key: 50000, label: "5만원 이상" },
+    { key: 100000, label: "10만원 이상" }
+  ];
+
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { gf: "A", categoryCode: "000" };
+  var state = { gf: "A", categoryCode: "000", minPrice: 50000 };
   var lastRankMap = {};
+  var lastItems = [];
   var pollTimer = null;
   var POLL_MS = 20000;
 
   var genderTabsEl = document.getElementById("genderTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
+  var priceTabsEl = document.getElementById("priceTabs");
   var listEl = document.getElementById("list");
   var captionEl = document.getElementById("listCaption");
   var updatedEl = document.getElementById("updatedAt");
@@ -226,9 +234,22 @@
       renderFilterTabs();
       loadRanking(false);
     });
+    renderTabs(priceTabsEl, PRICE_TIERS, "key", state.minPrice, function (key) {
+      state.minPrice = key;
+      lastRankMap = {};
+      renderFilterTabs();
+      renderFiltered(false);
+    });
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES.filter(function (c) { return c.code === state.categoryCode; })[0].label;
-    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · 5만원 이상";
+    var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
+    captionEl.textContent = genderLabel + " · " + catLabel + " · 실시간 · " + priceLabel;
+  }
+
+  function renderFiltered(animate) {
+    var filtered = lastItems.filter(function (it) { return it.price >= state.minPrice; });
+    filtered.forEach(function (it, idx) { it.rank = idx + 1; });
+    renderRows(filtered, animate);
   }
 
   function setLive(status, label) {
@@ -382,7 +403,8 @@
       .then(function (result) {
         if (!result.ok) throw new Error(result.body.error || "요청 실패");
         var body = result.body;
-        renderRows(body.items || [], animate);
+        lastItems = body.items || [];
+        renderFiltered(animate);
 
         var stamp = body.sourceUpdatedAt ? new Date(body.sourceUpdatedAt) : new Date(body.fetchedAt * 1000);
         var timeStr = stamp.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" });

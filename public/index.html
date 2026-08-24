@@ -93,14 +93,41 @@
   .list-header { display: flex; justify-content: space-between; align-items: baseline; margin: 1.5rem 0 0.6rem; color: var(--ink-muted); font-size: 0.78rem; }
   .list-header .err { color: var(--danger); font-weight: 600; }
 
+  .selection-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+    font-size: 0.8rem; font-weight: 600; color: var(--ink);
+  }
+  .selection-bar[hidden] { display: none; }
+  .selection-bar button {
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink-muted);
+    border-radius: 3px; padding: 0.3rem 0.6rem; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  }
+  .selection-bar button:hover { color: var(--ink); }
+
   .list { display: flex; flex-direction: column; border-top: 1px solid var(--line); min-height: 12rem; position: relative; }
 
   .row {
-    display: grid; grid-template-columns: 2.4rem 3rem 1fr auto auto; align-items: center; gap: 0.9rem;
+    display: grid; grid-template-columns: 1.5rem 2.4rem 3rem 1fr auto auto; align-items: center; gap: 0.9rem;
     padding: 0.7rem 0.25rem; border-bottom: 1px solid var(--line); background: var(--bg); text-decoration: none; color: inherit;
   }
   .row.flash { background: var(--surface); }
   .row.sold-out { opacity: 0.55; }
+  .row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+
+  .select-toggle {
+    width: 1.25rem; height: 1.25rem; border-radius: 50%; border: 1.5px solid var(--line);
+    background: var(--bg); cursor: pointer; padding: 0; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .select-toggle:hover { border-color: var(--accent); }
+  .select-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .select-toggle.checked { background: var(--accent); border-color: var(--accent); }
+  .select-toggle.checked::after {
+    content: ""; width: 0.4rem; height: 0.65rem; border: solid var(--accent-ink);
+    border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px);
+  }
 
   .rank { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.2rem; }
   .rank.new-entry { color: var(--accent); }
@@ -129,7 +156,7 @@
   .foot-note { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: 0.75rem; line-height: 1.6; color: var(--ink-muted); }
 
   @media (max-width: 560px) {
-    .row { grid-template-columns: 1.8rem 2.5rem 1fr auto; row-gap: 0.15rem; }
+    .row { grid-template-columns: 1.3rem 1.8rem 2.5rem 1fr auto; row-gap: 0.15rem; }
     .price-wrap { display: none; }
     .name-line { white-space: normal; }
   }
@@ -158,6 +185,11 @@
   <div class="list-header">
     <span id="listCaption">전체 · 실시간</span>
     <span id="updatedAt">불러오는 중…</span>
+  </div>
+
+  <div class="selection-bar" id="selectionBar" hidden>
+    <span id="selectionCount">0개 선택됨</span>
+    <button type="button" id="clearSelectionBtn">선택 해제</button>
   </div>
 
   <div class="list" id="list"></div>
@@ -219,6 +251,7 @@
   var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
   var lastRankMap = {};
   var lastItems = [];
+  var selectedIds = {};
   var pollTimer = null;
   var POLL_MS = 20000;
 
@@ -233,6 +266,9 @@
   var clockEl = document.getElementById("clock");
   var liveDot = document.getElementById("liveDot");
   var liveText = document.getElementById("liveText");
+  var selectionBarEl = document.getElementById("selectionBar");
+  var selectionCountEl = document.getElementById("selectionCount");
+  var clearSelectionBtn = document.getElementById("clearSelectionBtn");
 
   function fmtPrice(n) { return (n || 0).toLocaleString("ko-KR") + "원"; }
 
@@ -308,6 +344,12 @@
     liveText.textContent = label;
   }
 
+  function updateSelectionBar() {
+    var count = Object.keys(selectedIds).length;
+    selectionBarEl.hidden = count === 0;
+    selectionCountEl.textContent = count + "개 선택됨";
+  }
+
   function renderRows(items, animate) {
     var firstRects = {};
     if (animate && !reduceMotion) {
@@ -332,12 +374,34 @@
       var prevRank = lastRankMap[it.id];
       var delta = prevRank ? prevRank - rank : 0;
 
+      var isSelected = !!selectedIds[it.id];
+
       var row = document.createElement("a");
       row.href = it.url || "#";
       row.target = "_blank";
       row.rel = "noopener";
-      row.className = "row" + (it.soldOut ? " sold-out" : "");
+      row.className = "row" + (it.soldOut ? " sold-out" : "") + (isSelected ? " selected" : "");
       row.setAttribute("data-id", it.id);
+
+      var toggleEl = document.createElement("button");
+      toggleEl.type = "button";
+      toggleEl.className = "select-toggle" + (isSelected ? " checked" : "");
+      toggleEl.setAttribute("aria-pressed", isSelected ? "true" : "false");
+      toggleEl.setAttribute("aria-label", "선택");
+      toggleEl.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (selectedIds[it.id]) {
+          delete selectedIds[it.id];
+        } else {
+          selectedIds[it.id] = true;
+        }
+        var nowSelected = !!selectedIds[it.id];
+        toggleEl.classList.toggle("checked", nowSelected);
+        toggleEl.setAttribute("aria-pressed", nowSelected ? "true" : "false");
+        row.classList.toggle("selected", nowSelected);
+        updateSelectionBar();
+      });
 
       var rankEl = document.createElement("div");
       rankEl.className = "rank" + (prevRank === undefined ? " new-entry" : "");
@@ -418,6 +482,7 @@
         trendEl.textContent = "–";
       }
 
+      row.appendChild(toggleEl);
       row.appendChild(rankEl);
       row.appendChild(thumb);
       row.appendChild(textEl);
@@ -496,6 +561,18 @@
     state.query = searchInputEl.value;
     lastRankMap = {};
     renderFiltered(false);
+  });
+
+  clearSelectionBtn.addEventListener("click", function () {
+    selectedIds = {};
+    updateSelectionBar();
+    Array.prototype.forEach.call(listEl.querySelectorAll(".row.selected"), function (row) {
+      row.classList.remove("selected");
+    });
+    Array.prototype.forEach.call(listEl.querySelectorAll(".select-toggle.checked"), function (btn) {
+      btn.classList.remove("checked");
+      btn.setAttribute("aria-pressed", "false");
+    });
   });
 
   renderFilterTabs();

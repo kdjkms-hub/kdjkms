@@ -11,6 +11,8 @@ from pathlib import Path
 PORT = 8899
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
+PHOTOS_DIR = BASE_DIR / "상품사진선별"
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
 UPSTREAM_HEADERS = {
@@ -386,6 +388,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         {"error": "에이블리 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
                     )
 
+    def _handle_photos_api(self):
+        categories = []
+        if PHOTOS_DIR.exists():
+            for cat_dir in sorted(PHOTOS_DIR.iterdir()):
+                if not cat_dir.is_dir():
+                    continue
+                images = []
+                for f in sorted(cat_dir.rglob("*")):
+                    if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
+                        rel = f.relative_to(PHOTOS_DIR)
+                        images.append({
+                            "name": f.stem,
+                            "url": "/photos/" + urllib.parse.quote(str(rel).replace("\\", "/")),
+                        })
+                if images:
+                    categories.append({"name": cat_dir.name, "images": images})
+        self._send_json({"categories": categories})
+
+    def _handle_photo_file(self, path):
+        rel = urllib.parse.unquote(path[len("/photos/"):])
+        candidate = (PHOTOS_DIR / rel).resolve()
+        try:
+            candidate.relative_to(PHOTOS_DIR.resolve())
+        except ValueError:
+            self.send_error(403)
+            return
+        if not candidate.exists() or not candidate.is_file() or candidate.suffix.lower() not in IMAGE_EXTENSIONS:
+            self.send_error(404)
+            return
+
+        content_type = "application/octet-stream"
+        ext = candidate.suffix.lower()
+        if ext in (".jpg", ".jpeg"):
+            content_type = "image/jpeg"
+        elif ext == ".png":
+            content_type = "image/png"
+        elif ext == ".webp":
+            content_type = "image/webp"
+        elif ext == ".gif":
+            content_type = "image/gif"
+
+        body = candidate.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _handle_static(self, path):
         rel = path.lstrip("/") or "index.html"
         candidate = (PUBLIC_DIR / rel).resolve()
@@ -418,6 +468,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_ranking(parsed.query)
         elif parsed.path == "/api/ably-ranking":
             self._handle_ably_ranking(parsed.query)
+        elif parsed.path == "/api/photos":
+            self._handle_photos_api()
+        elif parsed.path.startswith("/photos/"):
+            self._handle_photo_file(parsed.path)
         else:
             self._handle_static(parsed.path)
 

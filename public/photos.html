@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>상품사진선별</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f4f1;
+    --surface-2: #ebe9e3;
+    --ink: #15140f;
+    --ink-muted: #726e62;
+    --accent: #c97a1e;
+    --accent-ink: #15140f;
+    --line: #e3dfd4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131210;
+      --surface: #1c1a16;
+      --surface-2: #262319;
+      --ink: #f2efe6;
+      --ink-muted: #a49d8a;
+      --accent: #e2a13f;
+      --accent-ink: #15140f;
+      --line: #322e25;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1000px; margin: 0 auto; padding: 2.25rem 1.25rem 4rem; }
+
+  .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .wordmark {
+    font-weight: 800; font-size: clamp(1.6rem, 5vw, 2.2rem); letter-spacing: -0.02em; line-height: 1; margin: 0;
+    background: none; border: none; padding: 0; font-family: inherit; color: var(--ink); cursor: pointer; text-decoration: none;
+  }
+  .wordmark span { color: var(--accent); }
+  .back-link {
+    font-size: 0.8rem; font-weight: 600; color: var(--ink-muted); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 3px; padding: 0.4rem 0.75rem;
+  }
+  .back-link:hover { color: var(--ink); }
+
+  .tear { margin: 1.5rem 0 2rem; border: none; border-top: 1.5px dashed var(--line); }
+
+  .category-block { margin-bottom: 2.5rem; }
+  .category-title {
+    font-size: 0.95rem; font-weight: 700; margin: 0 0 0.9rem;
+    display: flex; align-items: baseline; gap: 0.5rem;
+  }
+  .category-title .count { font-weight: 500; color: var(--ink-muted); font-size: 0.78rem; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem;
+  }
+  .photo-card {
+    display: block; border-radius: 4px; overflow: hidden; border: 1px solid var(--line);
+    background: var(--surface); text-decoration: none; color: inherit;
+  }
+  .photo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--surface-2); }
+  .photo-card .cap {
+    font-size: 0.7rem; color: var(--ink-muted); padding: 0.4rem 0.5rem; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .state-msg { padding: 3rem 1rem; text-align: center; color: var(--ink-muted); font-size: 0.9rem; line-height: 1.7; }
+  .refresh-btn {
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink-muted);
+    border-radius: 3px; padding: 0.4rem 0.75rem; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  }
+  .refresh-btn:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="masthead">
+    <a href="/" class="wordmark">Drop<span>Rank</span> 사진선별</a>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+      <button type="button" class="refresh-btn" id="refreshBtn">새로고침</button>
+      <a href="/" class="back-link">← 랭킹으로</a>
+    </div>
+  </div>
+
+  <hr class="tear" />
+
+  <div id="content">
+    <div class="state-msg">불러오는 중…</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var contentEl = document.getElementById("content");
+  var refreshBtn = document.getElementById("refreshBtn");
+
+  function render(categories) {
+    contentEl.innerHTML = "";
+    if (!categories.length) {
+      var msg = document.createElement("div");
+      msg.className = "state-msg";
+      msg.textContent = "아직 정리된 사진이 없습니다. DropRank에서 상품을 선택하고 \"발행\" 버튼을 눌러 목록을 클로드에게 전달해주세요.";
+      contentEl.appendChild(msg);
+      return;
+    }
+    categories.forEach(function (cat) {
+      var block = document.createElement("div");
+      block.className = "category-block";
+
+      var title = document.createElement("h2");
+      title.className = "category-title";
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = cat.name;
+      var countSpan = document.createElement("span");
+      countSpan.className = "count";
+      countSpan.textContent = cat.images.length + "장";
+      title.appendChild(nameSpan);
+      title.appendChild(countSpan);
+      block.appendChild(title);
+
+      var grid = document.createElement("div");
+      grid.className = "grid";
+      cat.images.forEach(function (img) {
+        var card = document.createElement("a");
+        card.className = "photo-card";
+        card.href = img.url;
+        card.target = "_blank";
+        card.rel = "noopener";
+
+        var imgEl = document.createElement("img");
+        imgEl.src = img.url;
+        imgEl.alt = img.name;
+
+        var cap = document.createElement("div");
+        cap.className = "cap";
+        cap.textContent = img.name;
+
+        card.appendChild(imgEl);
+        card.appendChild(cap);
+        grid.appendChild(card);
+      });
+      block.appendChild(grid);
+      contentEl.appendChild(block);
+    });
+  }
+
+  function load() {
+    fetch("/api/photos")
+      .then(function (res) { return res.json(); })
+      .then(function (body) { render(body.categories || []); })
+      .catch(function () {
+        contentEl.innerHTML = "";
+        var msg = document.createElement("div");
+        msg.className = "state-msg";
+        msg.textContent = "불러오지 못했습니다. 로컬 서버(server.py)가 실행 중인지 확인해주세요.";
+        contentEl.appendChild(msg);
+      });
+  }
+
+  refreshBtn.addEventListener("click", load);
+  load();
+})();
+</script>
+</body>
+</html>

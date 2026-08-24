@@ -599,42 +599,54 @@
 
   var SITE_LABELS = { musinsa: "무신사", ably: "에이블리" };
 
-  function buildPublishText() {
-    var lines = ["[DropRank 선택 목록 - " + new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }) + "]", ""];
-    var idx = 0;
-    Object.keys(selectedItems).forEach(function (id) {
-      idx += 1;
-      var it = selectedItems[id];
-      lines.push(idx + ". [" + (SITE_LABELS[it.site] || it.site) + "] " + it.brand + " - " + it.name + " (" + (it.price || 0).toLocaleString("ko-KR") + "원)");
-      lines.push(it.url);
-      lines.push("");
-    });
-    return lines.join("\n").trim();
-  }
-
   publishBtn.addEventListener("click", function () {
-    var text = buildPublishText();
+    var items = Object.keys(selectedItems).map(function (id) {
+      var it = selectedItems[id];
+      return {
+        site: it.site,
+        siteLabel: SITE_LABELS[it.site] || it.site,
+        brand: it.brand,
+        name: it.name,
+        price: it.price,
+        url: it.url
+      };
+    });
+    if (!items.length) return;
+
     var originalLabel = publishBtn.textContent;
-    function showCopied() {
-      publishBtn.textContent = "복사됨";
-      setTimeout(function () { publishBtn.textContent = originalLabel; }, 1500);
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(showCopied).catch(function () {
-        publishBtn.textContent = "복사 실패";
-        setTimeout(function () { publishBtn.textContent = originalLabel; }, 1500);
+    publishBtn.disabled = true;
+    publishBtn.textContent = "저장 중…";
+
+    fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: items })
+    })
+      .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+      .then(function (result) {
+        if (!result.ok) throw new Error(result.body.error || "저장 실패");
+        publishBtn.textContent = "저장됨";
+        selectedItems = {};
+        updateSelectionBar();
+        Array.prototype.forEach.call(listEl.querySelectorAll(".row.selected"), function (row) {
+          row.classList.remove("selected");
+        });
+        Array.prototype.forEach.call(listEl.querySelectorAll(".select-toggle.checked"), function (btn) {
+          btn.classList.remove("checked");
+          btn.setAttribute("aria-pressed", "false");
+        });
+        setTimeout(function () {
+          publishBtn.textContent = originalLabel;
+          publishBtn.disabled = false;
+        }, 1500);
+      })
+      .catch(function () {
+        publishBtn.textContent = "저장 실패";
+        setTimeout(function () {
+          publishBtn.textContent = originalLabel;
+          publishBtn.disabled = false;
+        }, 1500);
       });
-    } else {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      try { document.execCommand("copy"); showCopied(); } catch (e) {}
-      document.body.removeChild(ta);
-    }
   });
 
   renderFilterTabs();

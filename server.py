@@ -13,6 +13,8 @@ BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = BASE_DIR / "public"
 PHOTOS_DIR = BASE_DIR / "상품사진선별"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+PUBLISH_QUEUE_PATH = BASE_DIR / "발행_대기.json"
+_publish_lock = threading.Lock()
 
 UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
 UPSTREAM_HEADERS = {
@@ -474,6 +476,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_photo_file(parsed.path)
         else:
             self._handle_static(parsed.path)
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/publish":
+            self._handle_publish_post()
+        else:
+            self.send_error(404)
+
+    def _handle_publish_post(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            items = body.get("items", [])
+            if not items:
+                self._send_json({"error": "no items"}, 400)
+                return
+
+            entry = {"publishedAt": time.strftime("%Y-%m-%dT%H:%M:%S+09:00"), "items": items}
+            with _publish_lock:
+                queue = []
+                if PUBLISH_QUEUE_PATH.exists():
+                    try:
+                        queue = json.loads(PUBLISH_QUEUE_PATH.read_text(encoding="utf-8"))
+                    except Exception:
+                        queue = []
+                queue.append(entry)
+                PUBLISH_QUEUE_PATH.write_text(
+                    json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            self._send_json({"ok": True, "queued": len(items)})
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, 500)
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

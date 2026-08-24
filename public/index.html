@@ -135,6 +135,13 @@
     content: ""; width: 0.4rem; height: 0.65rem; border: solid var(--accent-ink);
     border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px);
   }
+  .select-toggle.published {
+    cursor: not-allowed; background: var(--surface-2); border-color: var(--line); opacity: 0.6;
+  }
+  .select-toggle.published:hover { border-color: var(--line); }
+  .select-toggle.published::after {
+    content: ""; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--ink-muted);
+  }
 
   .rank { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.2rem; }
   .rank.new-entry { color: var(--accent); }
@@ -424,6 +431,7 @@
       var delta = prevRank ? prevRank - rank : 0;
 
       var isSelected = !!selectedItems[it.id];
+      var isPublished = !!it.isPublished;
 
       var row = document.createElement("a");
       row.href = it.url || "#";
@@ -434,30 +442,36 @@
 
       var toggleEl = document.createElement("button");
       toggleEl.type = "button";
-      toggleEl.className = "select-toggle" + (isSelected ? " checked" : "");
+      toggleEl.className = "select-toggle" + (isSelected ? " checked" : "") + (isPublished ? " published" : "");
       toggleEl.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      toggleEl.setAttribute("aria-label", "선택");
-      toggleEl.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (selectedItems[it.id]) {
-          delete selectedItems[it.id];
-        } else {
-          selectedItems[it.id] = {
-            id: it.id,
-            site: state.site,
-            brand: it.brand,
-            name: it.name,
-            price: it.price,
-            url: it.url
-          };
-        }
-        var nowSelected = !!selectedItems[it.id];
-        toggleEl.classList.toggle("checked", nowSelected);
-        toggleEl.setAttribute("aria-pressed", nowSelected ? "true" : "false");
-        row.classList.toggle("selected", nowSelected);
-        updateSelectionBar();
-      });
+      if (isPublished) {
+        toggleEl.disabled = true;
+        toggleEl.setAttribute("aria-label", "발행 완료 · 선택 불가");
+        toggleEl.title = "이미 발행된 상품이에요";
+      } else {
+        toggleEl.setAttribute("aria-label", "선택");
+        toggleEl.addEventListener("click", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (selectedItems[it.id]) {
+            delete selectedItems[it.id];
+          } else {
+            selectedItems[it.id] = {
+              id: it.id,
+              site: state.site,
+              brand: it.brand,
+              name: it.name,
+              price: it.price,
+              url: it.url
+            };
+          }
+          var nowSelected = !!selectedItems[it.id];
+          toggleEl.classList.toggle("checked", nowSelected);
+          toggleEl.setAttribute("aria-pressed", nowSelected ? "true" : "false");
+          row.classList.toggle("selected", nowSelected);
+          updateSelectionBar();
+        });
+      }
 
       var rankEl = document.createElement("div");
       rankEl.className = "rank" + (prevRank === undefined ? " new-entry" : "");
@@ -492,6 +506,14 @@
         soldBadge.style.color = "var(--ink-muted)";
         soldBadge.textContent = "품절";
         brandLine.appendChild(soldBadge);
+      }
+      if (isPublished) {
+        var publishedBadge = document.createElement("span");
+        publishedBadge.className = "badge";
+        publishedBadge.style.background = "var(--surface-2)";
+        publishedBadge.style.color = "var(--ink-muted)";
+        publishedBadge.textContent = "발행됨";
+        brandLine.appendChild(publishedBadge);
       }
 
       var nameLine = document.createElement("div");

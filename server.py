@@ -37,19 +37,19 @@ def add_published_ids(keys):
         )
 
 
-def filter_published(items, site):
+def annotate_published(items, site):
     published = load_published_ids()
-    if not published:
-        return items
-    kept = [dict(it) for it in items if (site + ":" + str(it.get("id"))) not in published]
-    for idx, it in enumerate(kept, start=1):
-        it["rank"] = idx
-    return kept
+    out = []
+    for it in items:
+        it = dict(it)
+        it["isPublished"] = (site + ":" + str(it.get("id"))) in published
+        out.append(it)
+    return out
 
 
 def build_response(data, site, extra):
     out = dict(data)
-    out["items"] = filter_published(out.get("items", []), site)
+    out["items"] = annotate_published(out.get("items", []), site)
     out.update(extra)
     return out
 
@@ -488,7 +488,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         try:
             data = fetch_search(keyword, gf)
-            data["items"] = filter_published(data["items"], "musinsa")
+            data["items"] = annotate_published(data["items"], "musinsa")
             self._send_json(data)
         except Exception as exc:
             self._send_json({"error": "무신사 검색에 실패했습니다: " + str(exc)}, 502)

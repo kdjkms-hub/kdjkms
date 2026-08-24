@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>발행 진행 상황</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f4f1;
+    --surface-2: #ebe9e3;
+    --ink: #15140f;
+    --ink-muted: #726e62;
+    --accent: #c97a1e;
+    --accent-ink: #15140f;
+    --line: #e3dfd4;
+    --live: #2f9e5b;
+    --danger: #b23b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131210;
+      --surface: #1c1a16;
+      --surface-2: #262319;
+      --ink: #f2efe6;
+      --ink-muted: #a49d8a;
+      --accent: #e2a13f;
+      --accent-ink: #15140f;
+      --line: #322e25;
+      --live: #3fbd76;
+      --danger: #e07a7a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 760px; margin: 0 auto; padding: 2.25rem 1.25rem 4rem; }
+
+  .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .wordmark {
+    font-weight: 800; font-size: clamp(1.6rem, 5vw, 2.2rem); letter-spacing: -0.02em; line-height: 1; margin: 0;
+    color: var(--ink); text-decoration: none;
+  }
+  .wordmark span { color: var(--accent); }
+  .back-link {
+    font-size: 0.8rem; font-weight: 600; color: var(--ink-muted); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 3px; padding: 0.4rem 0.75rem;
+  }
+  .back-link:hover { color: var(--ink); }
+
+  .tear { margin: 1.5rem 0 2rem; border: none; border-top: 1.5px dashed var(--line); }
+
+  .status-card {
+    border: 1px solid var(--line); border-radius: 6px; padding: 1.25rem; background: var(--surface);
+  }
+  .status-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-muted); flex: 0 0 auto; }
+  .status-dot.queued { background: var(--accent); }
+  .status-dot.running { background: var(--live); animation: pulse 1.4s ease-out infinite; }
+  .status-dot.done { background: var(--live); }
+  .status-dot.error { background: var(--danger); }
+  @media (prefers-reduced-motion: reduce) { .status-dot.running { animation: none; } }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(47,158,91,0.45); }
+    70% { box-shadow: 0 0 0 8px rgba(47,158,91,0); }
+    100% { box-shadow: 0 0 0 0 rgba(47,158,91,0); }
+  }
+  .status-label { font-weight: 700; font-size: 1rem; }
+  .status-message { color: var(--ink-muted); font-size: 0.85rem; margin: 0 0 1rem; }
+
+  .progress-track {
+    height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-bottom: 0.5rem;
+  }
+  .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 400ms ease; }
+  .progress-count {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums;
+    font-size: 0.8rem; color: var(--ink-muted); text-align: right;
+  }
+
+  .current-item {
+    margin-top: 1rem; padding: 0.6rem 0.75rem; border-radius: 4px; background: var(--bg);
+    border: 1px solid var(--line); font-size: 0.85rem;
+  }
+  .current-item .label { color: var(--ink-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem; }
+
+  .log {
+    margin-top: 1.25rem; max-height: 260px; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 0.75rem;
+  }
+  .log-line {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.75rem;
+    color: var(--ink-muted); padding: 0.2rem 0; white-space: pre-wrap; word-break: break-word;
+  }
+
+  .photos-link {
+    display: inline-block; margin-top: 1.25rem; font-size: 0.85rem; font-weight: 600;
+    color: var(--accent-ink); background: var(--accent); text-decoration: none;
+    padding: 0.5rem 0.9rem; border-radius: 4px;
+  }
+
+  .state-msg { padding: 3rem 1rem; text-align: center; color: var(--ink-muted); font-size: 0.9rem; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="masthead">
+    <a href="/" class="wordmark">Drop<span>Rank</span> 발행 진행</a>
+    <a href="/" class="back-link">← 랭킹으로</a>
+  </div>
+
+  <hr class="tear" />
+
+  <div id="content">
+    <div class="state-msg">불러오는 중…</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var contentEl = document.getElementById("content");
+
+  var STATUS_LABELS = {
+    idle: "대기 중",
+    queued: "발행됨 · 대기 중",
+    running: "진행 중",
+    done: "완료",
+    error: "오류"
+  };
+
+  function render(status) {
+    var state = status.status || "idle";
+
+    if (state === "idle") {
+      contentEl.innerHTML = "";
+      var msg = document.createElement("div");
+      msg.className = "state-msg";
+      msg.textContent = "아직 발행된 목록이 없습니다. DropRank에서 상품을 선택하고 \"발행\" 버튼을 눌러주세요.";
+      contentEl.appendChild(msg);
+      return;
+    }
+
+    var total = status.total || 0;
+    var completed = status.completed || 0;
+    var pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    contentEl.innerHTML = "";
+
+    var card = document.createElement("div");
+    card.className = "status-card";
+
+    var statusRow = document.createElement("div");
+    statusRow.className = "status-row";
+    var dot = document.createElement("span");
+    dot.className = "status-dot " + state;
+    var label = document.createElement("span");
+    label.className = "status-label";
+    label.textContent = STATUS_LABELS[state] || state;
+    statusRow.appendChild(dot);
+    statusRow.appendChild(label);
+    card.appendChild(statusRow);
+
+    if (status.message) {
+      var messageEl = document.createElement("p");
+      messageEl.className = "status-message";
+      messageEl.textContent = status.message;
+      card.appendChild(messageEl);
+    }
+
+    if (total > 0) {
+      var track = document.createElement("div");
+      track.className = "progress-track";
+      var fill = document.createElement("div");
+      fill.className = "progress-fill";
+      fill.style.width = pct + "%";
+      track.appendChild(fill);
+      card.appendChild(track);
+
+      var count = document.createElement("div");
+      count.className = "progress-count";
+      count.textContent = completed + " / " + total + " (" + pct + "%)";
+      card.appendChild(count);
+    }
+
+    if (status.currentItem) {
+      var currentBox = document.createElement("div");
+      currentBox.className = "current-item";
+      var currentLabel = document.createElement("div");
+      currentLabel.className = "label";
+      currentLabel.textContent = "현재 처리 중";
+      var currentText = document.createElement("div");
+      currentText.textContent = status.currentItem;
+      currentBox.appendChild(currentLabel);
+      currentBox.appendChild(currentText);
+      card.appendChild(currentBox);
+    }
+
+    if (status.log && status.log.length) {
+      var logEl = document.createElement("div");
+      logEl.className = "log";
+      status.log.forEach(function (line) {
+        var lineEl = document.createElement("div");
+        lineEl.className = "log-line";
+        lineEl.textContent = line;
+        logEl.appendChild(lineEl);
+      });
+      card.appendChild(logEl);
+    }
+
+    if (state === "done") {
+      var link = document.createElement("a");
+      link.className = "photos-link";
+      link.href = "/photos.html";
+      link.textContent = "정리된 사진 보기 →";
+      card.appendChild(link);
+    }
+
+    contentEl.appendChild(card);
+  }
+
+  function load() {
+    fetch("/api/publish-status")
+      .then(function (res) { return res.json(); })
+      .then(render)
+      .catch(function () {
+        contentEl.innerHTML = "";
+        var msg = document.createElement("div");
+        msg.className = "state-msg";
+        msg.textContent = "불러오지 못했습니다. 로컬 서버(server.py)가 실행 중인지 확인해주세요.";
+        contentEl.appendChild(msg);
+      });
+  }
+
+  load();
+  setInterval(load, 3000);
+})();
+</script>
+</body>
+</html>

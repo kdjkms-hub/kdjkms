@@ -14,6 +14,7 @@ PUBLIC_DIR = BASE_DIR / "public"
 PHOTOS_DIR = BASE_DIR / "상품사진선별"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 PUBLISH_QUEUE_PATH = BASE_DIR / "발행_대기.json"
+PUBLISH_STATUS_PATH = BASE_DIR / "발행_진행상황.json"
 _publish_lock = threading.Lock()
 
 UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
@@ -390,6 +391,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         {"error": "에이블리 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
                     )
 
+    def _handle_publish_status(self):
+        if PUBLISH_STATUS_PATH.exists():
+            try:
+                status = json.loads(PUBLISH_STATUS_PATH.read_text(encoding="utf-8"))
+            except Exception:
+                status = {"status": "idle"}
+        else:
+            status = {"status": "idle"}
+        self._send_json(status)
+
     def _handle_photos_api(self):
         categories = []
         if PHOTOS_DIR.exists():
@@ -472,6 +483,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_ably_ranking(parsed.query)
         elif parsed.path == "/api/photos":
             self._handle_photos_api()
+        elif parsed.path == "/api/publish-status":
+            self._handle_publish_status()
         elif parsed.path.startswith("/photos/"):
             self._handle_photo_file(parsed.path)
         else:
@@ -504,6 +517,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 queue.append(entry)
                 PUBLISH_QUEUE_PATH.write_text(
                     json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                status = {
+                    "status": "queued",
+                    "message": "발행됨 · 처리 대기 중 (대화창에서 확인 요청 필요)",
+                    "queuedAt": entry["publishedAt"],
+                    "total": len(items),
+                    "completed": 0,
+                    "currentItem": None,
+                    "log": [],
+                }
+                PUBLISH_STATUS_PATH.write_text(
+                    json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
             self._send_json({"ok": True, "queued": len(items)})
         except Exception as exc:

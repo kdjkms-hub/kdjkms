@@ -69,7 +69,7 @@ SEARCH_HEADERS = {
     "Referer": "https://www.musinsa.com/search/goods",
     "Accept": "application/json",
 }
-SEARCH_PAGE_SIZE = 30
+SEARCH_PAGE_SIZE = 100
 
 ALLOWED_GF = {"A", "M", "W"}
 ALLOWED_CATEGORY = {

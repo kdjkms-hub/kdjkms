@@ -260,9 +260,11 @@
   ];
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "", searchMode: false };
   var lastRankMap = {};
   var lastItems = [];
+  var searchItems = [];
+  var searchDebounceTimer = null;
   var selectedItems = {};
   var pollTimer = null;
   var POLL_MS = 20000;
@@ -311,6 +313,9 @@
       state.site = key;
       state.categoryCode = "000";
       state.gf = "A";
+      state.query = "";
+      state.searchMode = false;
+      searchInputEl.value = "";
       lastRankMap = {};
       lastItems = [];
       renderFilterTabs();
@@ -320,7 +325,11 @@
       state.gf = key;
       lastRankMap = {};
       renderFilterTabs();
-      loadRanking(false);
+      if (state.searchMode) {
+        runSearch();
+      } else {
+        loadRanking(false);
+      }
     });
     renderTabs(categoryTabsEl, CATEGORIES_BY_SITE[state.site], "code", state.categoryCode, function (code) {
       state.categoryCode = code;
@@ -338,13 +347,40 @@
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
-    captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
+    if (state.searchMode) {
+      captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + "\"" + state.query + "\" 검색 결과 · " + priceLabel;
+    } else {
+      captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
+    }
+  }
+
+  function runSearch() {
+    var requestQuery = state.query;
+    var requestGf = state.gf;
+    setLive("ok", "검색 중…");
+    fetch("/api/search?" + new URLSearchParams({ keyword: requestQuery, gf: requestGf }).toString())
+      .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
+      .then(function (result) {
+        if (requestQuery !== state.query || requestGf !== state.gf || !state.searchMode) return;
+        if (!result.ok) throw new Error(result.body.error || "검색 실패");
+        searchItems = result.body.items || [];
+        lastRankMap = {};
+        renderFiltered(false);
+        updatedEl.textContent = "무신사 전체 검색 · " + (result.body.totalCount || searchItems.length).toLocaleString("ko-KR") + "개 중 상위 " + searchItems.length + "개";
+        setLive("ok", "LIVE");
+      })
+      .catch(function (err) {
+        setLive("error", "검색 실패");
+        updatedEl.textContent = "검색 실패: " + err.message;
+      });
   }
 
   function renderFiltered(animate) {
     var q = state.query.trim().toLowerCase();
-    var filtered = lastItems.filter(function (it) {
+    var source = state.searchMode ? searchItems : lastItems;
+    var filtered = source.filter(function (it) {
       if (it.price < state.minPrice) return false;
+      if (state.searchMode) return true;
       if (!q) return true;
       return (it.brand + " " + it.name).toLowerCase().indexOf(q) !== -1;
     });
@@ -544,6 +580,7 @@
         if (!result.ok) throw new Error(result.body.error || "요청 실패");
         var body = result.body;
         lastItems = body.items || [];
+        if (state.searchMode) return;
         renderFiltered(animate);
 
         var stamp = body.sourceUpdatedAt ? new Date(body.sourceUpdatedAt) : new Date(body.fetchedAt * 1000);
@@ -558,6 +595,7 @@
         }
       })
       .catch(function (err) {
+        if (state.searchMode) return;
         setLive("error", "연결 실패");
         var errEl = document.createElement("span");
         errEl.className = "err";
@@ -580,7 +618,23 @@
   searchInputEl.addEventListener("input", function () {
     state.query = searchInputEl.value;
     lastRankMap = {};
-    renderFiltered(false);
+
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+
+    var trimmed = state.query.trim();
+    var canSearchSite = state.site === "musinsa";
+
+    if (canSearchSite && trimmed.length >= 2) {
+      searchDebounceTimer = setTimeout(function () {
+        state.searchMode = true;
+        renderFilterTabs();
+        runSearch();
+      }, 400);
+    } else {
+      state.searchMode = false;
+      renderFilterTabs();
+      renderFiltered(false);
+    }
   });
 
   clearSelectionBtn.addEventListener("click", function () {

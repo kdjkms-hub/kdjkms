@@ -63,6 +63,14 @@ UPSTREAM_HEADERS = {
     "Accept": "application/json",
 }
 
+SEARCH_UPSTREAM = "https://api.musinsa.com/api2/dp/v1/plp/goods"
+SEARCH_HEADERS = {
+    "User-Agent": UPSTREAM_HEADERS["User-Agent"],
+    "Referer": "https://www.musinsa.com/search/goods",
+    "Accept": "application/json",
+}
+SEARCH_PAGE_SIZE = 30
+
 ALLOWED_GF = {"A", "M", "W"}
 ALLOWED_CATEGORY = {
     "000", "104", "103", "001", "002", "003", "100",
@@ -211,6 +219,50 @@ def get_fetch_lock(key):
         if key not in _fetch_locks:
             _fetch_locks[key] = threading.Lock()
         return _fetch_locks[key]
+
+
+def fetch_search(keyword, gf):
+    params = {
+        "keyword": keyword,
+        "gf": gf,
+        "sortCode": "POPULAR",
+        "isUsed": "false",
+        "size": str(SEARCH_PAGE_SIZE),
+        "page": "1",
+        "caller": "SEARCH",
+    }
+    url = SEARCH_UPSTREAM + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers=SEARCH_HEADERS)
+    with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT_SECONDS) as resp:
+        raw = json.loads(resp.read().decode("utf-8"))
+
+    rows = raw.get("data", {}).get("list", [])
+    items = []
+    for it in rows:
+        if it.get("isAd"):
+            continue
+        final_price = it.get("finalPrice") or it.get("price") or 0
+        discount = it.get("finalDiscount") or 0
+        original_price = it.get("normalPrice") or final_price
+        items.append({
+            "id": it.get("goodsNo"),
+            "brand": it.get("brandName", ""),
+            "name": it.get("goodsName", ""),
+            "price": final_price,
+            "originalPrice": original_price,
+            "discount": discount,
+            "soldOut": bool(it.get("isSoldOut")),
+            "image": it.get("thumbnail", ""),
+            "url": it.get("goodsLinkUrl", ""),
+            "labels": [],
+            "note": "",
+        })
+
+    for idx, it in enumerate(items, start=1):
+        it["rank"] = idx
+
+    total_count = raw.get("data", {}).get("pagination", {}).get("totalCount", len(items))
+    return {"items": items, "totalCount": total_count}
 
 
 def fetch_ranking(gf, category_code):
@@ -425,6 +477,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         {"error": "에이블리 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
                     )
 
+    def _handle_search(self, query):
+        qs = urllib.parse.parse_qs(query)
+        keyword = (qs.get("keyword", [""])[0] or "").strip()
+        gf = (qs.get("gf", ["A"])[0] or "A").upper()
+        if gf not in ALLOWED_GF:
+            gf = "A"
+        if not keyword:
+            self._send_json({"items": [], "totalCount": 0})
+            return
+        try:
+            data = fetch_search(keyword, gf)
+            data["items"] = filter_published(data["items"], "musinsa")
+            self._send_json(data)
+        except Exception as exc:
+            self._send_json({"error": "무신사 검색에 실패했습니다: " + str(exc)}, 502)
+
     def _handle_publish_status(self):
         if PUBLISH_STATUS_PATH.exists():
             try:
@@ -516,6 +584,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_ranking(parsed.query)
         elif parsed.path == "/api/ably-ranking":
             self._handle_ably_ranking(parsed.query)
+        elif parsed.path == "/api/search":
+            self._handle_search(parsed.query)
         elif parsed.path == "/api/photos":
             self._handle_photos_api()
         elif parsed.path == "/api/publish-status":

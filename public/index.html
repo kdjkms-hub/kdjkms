@@ -408,6 +408,7 @@
           delete selectedItems[it.id];
         } else {
           selectedItems[it.id] = {
+            id: it.id,
             site: state.site,
             brand: it.brand,
             name: it.name,
@@ -604,6 +605,7 @@
     var items = Object.keys(selectedItems).map(function (id) {
       var it = selectedItems[id];
       return {
+        id: it.id,
         site: it.site,
         siteLabel: SITE_LABELS[it.site] || it.site,
         brand: it.brand,

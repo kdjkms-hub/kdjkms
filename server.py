@@ -15,7 +15,43 @@ PHOTOS_DIR = BASE_DIR / "상품사진선별"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 PUBLISH_QUEUE_PATH = BASE_DIR / "발행_대기.json"
 PUBLISH_STATUS_PATH = BASE_DIR / "발행_진행상황.json"
+PUBLISHED_IDS_PATH = BASE_DIR / "발행완료_상품.json"
 _publish_lock = threading.Lock()
+
+
+def load_published_ids():
+    if not PUBLISHED_IDS_PATH.exists():
+        return set()
+    try:
+        return set(json.loads(PUBLISHED_IDS_PATH.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def add_published_ids(keys):
+    with _publish_lock:
+        current = load_published_ids()
+        current.update(keys)
+        PUBLISHED_IDS_PATH.write_text(
+            json.dumps(sorted(current), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+
+def filter_published(items, site):
+    published = load_published_ids()
+    if not published:
+        return items
+    kept = [dict(it) for it in items if (site + ":" + str(it.get("id"))) not in published]
+    for idx, it in enumerate(kept, start=1):
+        it["rank"] = idx
+    return kept
+
+
+def build_response(data, site, extra):
+    out = dict(data)
+    out["items"] = filter_published(out.get("items", []), site)
+    out.update(extra)
+    return out
 
 UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
 UPSTREAM_HEADERS = {
@@ -315,7 +351,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with _cache_lock:
             cached = _cache.get(key)
         if cached and now - cached["ts"] < CACHE_TTL_SECONDS:
-            self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+            self._send_json(build_response(cached["data"], "musinsa", {"fetchedAt": cached["ts"], "cached": True}))
             return
 
         lock = get_fetch_lock(key)
@@ -323,7 +359,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with _cache_lock:
                 cached = _cache.get(key)
             if cached and time.time() - cached["ts"] < CACHE_TTL_SECONDS:
-                self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+                self._send_json(build_response(cached["data"], "musinsa", {"fetchedAt": cached["ts"], "cached": True}))
                 return
             try:
                 data = fetch_ranking(gf, category_code)
@@ -331,16 +367,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with _cache_lock:
                     _cache[key] = {"ts": ts, "data": data}
                 log_snapshot_to_supabase(gf, category_code, data)
-                self._send_json({**data, "fetchedAt": ts, "cached": False})
+                self._send_json(build_response(data, "musinsa", {"fetchedAt": ts, "cached": False}))
             except Exception as exc:
                 if cached:
-                    self._send_json({
-                        **cached["data"],
+                    self._send_json(build_response(cached["data"], "musinsa", {
                         "fetchedAt": cached["ts"],
                         "cached": True,
                         "stale": True,
                         "error": str(exc),
-                    })
+                    }))
                 else:
                     self._send_json(
                         {"error": "무신사 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
@@ -360,7 +395,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with _cache_lock:
             cached = _cache.get(key)
         if cached and now - cached["ts"] < CACHE_TTL_SECONDS:
-            self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+            self._send_json(build_response(cached["data"], "ably", {"fetchedAt": cached["ts"], "cached": True}))
             return
 
         lock = get_fetch_lock(key)
@@ -368,7 +403,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with _cache_lock:
                 cached = _cache.get(key)
             if cached and time.time() - cached["ts"] < CACHE_TTL_SECONDS:
-                self._send_json({**cached["data"], "fetchedAt": cached["ts"], "cached": True})
+                self._send_json(build_response(cached["data"], "ably", {"fetchedAt": cached["ts"], "cached": True}))
                 return
             try:
                 data = fetch_ably_ranking(category_code)
@@ -376,16 +411,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 with _cache_lock:
                     _cache[key] = {"ts": ts, "data": data}
                 log_ably_snapshot_to_supabase(category_code, data)
-                self._send_json({**data, "fetchedAt": ts, "cached": False})
+                self._send_json(build_response(data, "ably", {"fetchedAt": ts, "cached": False}))
             except Exception as exc:
                 if cached:
-                    self._send_json({
-                        **cached["data"],
+                    self._send_json(build_response(cached["data"], "ably", {
                         "fetchedAt": cached["ts"],
                         "cached": True,
                         "stale": True,
                         "error": str(exc),
-                    })
+                    }))
                 else:
                     self._send_json(
                         {"error": "에이블리 서버에서 데이터를 가져오지 못했습니다: " + str(exc)}, 502
@@ -530,6 +564,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 PUBLISH_STATUS_PATH.write_text(
                     json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
+
+            published_keys = [
+                it["site"] + ":" + str(it["id"])
+                for it in items
+                if it.get("site") and it.get("id") is not None
+            ]
+            if published_keys:
+                add_published_ids(published_keys)
+
             self._send_json({"ok": True, "queued": len(items)})
         except Exception as exc:
             self._send_json({"error": str(exc)}, 500)

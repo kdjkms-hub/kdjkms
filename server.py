@@ -444,10 +444,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 images = []
                 for f in sorted(cat_dir.rglob("*")):
                     if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
-                        rel = f.relative_to(PHOTOS_DIR)
+                        rel = str(f.relative_to(PHOTOS_DIR)).replace("\\", "/")
                         images.append({
                             "name": f.stem,
-                            "url": "/photos/" + urllib.parse.quote(str(rel).replace("\\", "/")),
+                            "path": rel,
+                            "url": "/photos/" + urllib.parse.quote(rel),
                         })
                 if images:
                     categories.append({"name": cat_dir.name, "images": images})
@@ -528,8 +529,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/publish":
             self._handle_publish_post()
+        elif parsed.path == "/api/photos/delete":
+            self._handle_photos_delete()
         else:
             self.send_error(404)
+
+    def _handle_photos_delete(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            rel_paths = body.get("paths", [])
+
+            deleted = []
+            errors = []
+            for rel in rel_paths:
+                try:
+                    candidate = (PHOTOS_DIR / rel).resolve()
+                    candidate.relative_to(PHOTOS_DIR.resolve())
+                except ValueError:
+                    errors.append({"path": rel, "error": "invalid path"})
+                    continue
+                if not candidate.exists() or not candidate.is_file():
+                    errors.append({"path": rel, "error": "not found"})
+                    continue
+                try:
+                    candidate.unlink()
+                    deleted.append(rel)
+                    parent = candidate.parent
+                    while parent != PHOTOS_DIR.resolve() and parent.exists() and not any(parent.iterdir()):
+                        empty_dir = parent
+                        parent = parent.parent
+                        empty_dir.rmdir()
+                except Exception as exc:
+                    errors.append({"path": rel, "error": str(exc)})
+
+            self._send_json({"deleted": deleted, "errors": errors})
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, 500)
 
     def _handle_publish_post(self):
         try:

@@ -14,6 +14,7 @@
     --accent: #c97a1e;
     --accent-ink: #15140f;
     --line: #e3dfd4;
+    --danger: #b23b3b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,6 +26,7 @@
       --accent: #e2a13f;
       --accent-ink: #15140f;
       --line: #322e25;
+      --danger: #e07a7a;
     }
   }
   * { box-sizing: border-box; }
@@ -62,13 +64,25 @@
     display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem;
   }
   .photo-card {
-    display: block; border-radius: 4px; overflow: hidden; border: 1px solid var(--line);
+    display: block; position: relative; border-radius: 4px; overflow: hidden; border: 1px solid var(--line);
     background: var(--surface); text-decoration: none; color: inherit;
   }
+  .photo-card.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
   .photo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--surface-2); }
   .photo-card .cap {
     font-size: 0.7rem; color: var(--ink-muted); padding: 0.4rem 0.5rem; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .photo-select {
+    position: absolute; top: 0.4rem; left: 0.4rem; width: 1.35rem; height: 1.35rem; border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.85); background: rgba(21,20,15,0.35); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; z-index: 1;
+  }
+  .photo-select.checked { background: var(--accent); border-color: var(--accent); }
+  .photo-select.checked::after {
+    content: ""; width: 0.4rem; height: 0.65rem; border: solid var(--accent-ink);
+    border-width: 0 2px 2px 0; transform: rotate(45deg) translate(-1px, -1px);
   }
 
   .state-msg { padding: 3rem 1rem; text-align: center; color: var(--ink-muted); font-size: 0.9rem; line-height: 1.7; }
@@ -77,6 +91,21 @@
     border-radius: 3px; padding: 0.4rem 0.75rem; font-size: 0.78rem; font-weight: 600; cursor: pointer;
   }
   .refresh-btn:hover { color: var(--ink); }
+
+  .selection-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.5rem 0.75rem; margin-bottom: 1.25rem; border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+    font-size: 0.8rem; font-weight: 600; color: var(--ink);
+  }
+  .selection-bar[hidden] { display: none; }
+  .selection-actions { display: flex; gap: 0.5rem; }
+  .selection-bar button {
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink-muted);
+    border-radius: 3px; padding: 0.3rem 0.6rem; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  }
+  .selection-bar button:hover { color: var(--ink); }
+  .selection-bar #deleteSelectedBtn { background: var(--danger); border-color: var(--danger); color: #fff; }
 </style>
 </head>
 <body>
@@ -91,6 +120,14 @@
 
   <hr class="tear" />
 
+  <div class="selection-bar" id="selectionBar" hidden>
+    <span id="selectionCount">0장 선택됨</span>
+    <span class="selection-actions">
+      <button type="button" id="deleteSelectedBtn">선택 삭제</button>
+      <button type="button" id="clearSelectionBtn">선택 해제</button>
+    </span>
+  </div>
+
   <div id="content">
     <div class="state-msg">불러오는 중…</div>
   </div>
@@ -100,9 +137,35 @@
 (function () {
   var contentEl = document.getElementById("content");
   var refreshBtn = document.getElementById("refreshBtn");
+  var selectionBarEl = document.getElementById("selectionBar");
+  var selectionCountEl = document.getElementById("selectionCount");
+  var deleteSelectedBtn = document.getElementById("deleteSelectedBtn");
+  var clearSelectionBtn = document.getElementById("clearSelectionBtn");
+
+  var selectedPaths = {};
+
+  function updateSelectionBar() {
+    var count = Object.keys(selectedPaths).length;
+    selectionBarEl.hidden = count === 0;
+    selectionCountEl.textContent = count + "장 선택됨";
+  }
+
+  function clearSelection() {
+    selectedPaths = {};
+    updateSelectionBar();
+    Array.prototype.forEach.call(contentEl.querySelectorAll(".photo-card.selected"), function (card) {
+      card.classList.remove("selected");
+    });
+    Array.prototype.forEach.call(contentEl.querySelectorAll(".photo-select.checked"), function (btn) {
+      btn.classList.remove("checked");
+      btn.setAttribute("aria-pressed", "false");
+    });
+  }
 
   function render(categories) {
     contentEl.innerHTML = "";
+    selectedPaths = {};
+    updateSelectionBar();
     if (!categories.length) {
       var msg = document.createElement("div");
       msg.className = "state-msg";
@@ -133,6 +196,27 @@
         card.href = img.url;
         card.target = "_blank";
         card.rel = "noopener";
+        card.setAttribute("data-path", img.path);
+
+        var selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.className = "photo-select";
+        selectBtn.setAttribute("aria-label", "사진 선택");
+        selectBtn.setAttribute("aria-pressed", "false");
+        selectBtn.addEventListener("click", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (selectedPaths[img.path]) {
+            delete selectedPaths[img.path];
+          } else {
+            selectedPaths[img.path] = true;
+          }
+          var nowSelected = !!selectedPaths[img.path];
+          selectBtn.classList.toggle("checked", nowSelected);
+          selectBtn.setAttribute("aria-pressed", nowSelected ? "true" : "false");
+          card.classList.toggle("selected", nowSelected);
+          updateSelectionBar();
+        });
 
         var imgEl = document.createElement("img");
         imgEl.src = img.url;
@@ -142,6 +226,7 @@
         cap.className = "cap";
         cap.textContent = img.name;
 
+        card.appendChild(selectBtn);
         card.appendChild(imgEl);
         card.appendChild(cap);
         grid.appendChild(card);
@@ -163,6 +248,38 @@
         contentEl.appendChild(msg);
       });
   }
+
+  clearSelectionBtn.addEventListener("click", clearSelection);
+
+  deleteSelectedBtn.addEventListener("click", function () {
+    var paths = Object.keys(selectedPaths);
+    if (!paths.length) return;
+    if (!window.confirm(paths.length + "장의 사진을 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+
+    var originalLabel = deleteSelectedBtn.textContent;
+    deleteSelectedBtn.disabled = true;
+    deleteSelectedBtn.textContent = "삭제 중…";
+
+    fetch("/api/photos/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths: paths })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (result) {
+        if (result.errors && result.errors.length) {
+          window.alert("일부 삭제 실패: " + result.errors.map(function (e) { return e.path; }).join(", "));
+        }
+        load();
+      })
+      .catch(function () {
+        window.alert("삭제 요청에 실패했습니다.");
+      })
+      .finally(function () {
+        deleteSelectedBtn.disabled = false;
+        deleteSelectedBtn.textContent = originalLabel;
+      });
+  });
 
   refreshBtn.addEventListener("click", load);
   load();

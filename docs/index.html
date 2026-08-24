@@ -175,8 +175,6 @@
   var SUPABASE_KEY = "sb_publishable_YzZ7-HuyTWfwR9SQ_A6n7Q_imyR0Jjh";
   var TABLE_BY_SITE = { musinsa: "ranking_snapshots", ably: "ably_ranking_snapshots" };
   var POLL_MS = 20000;
-  var MUSINSA_CURATOR_QUERY = "utm_source=curator&utm_campaign=curator&utm_medium=if" +
-    "&utm_content=curator_goodslink&source=XML5UIKZ6&pid=curator";
 
   var SITES = [
     { key: "musinsa", label: "무신사" },
@@ -352,7 +350,7 @@
       var row = document.createElement("a");
       row.href = state.site === "ably"
         ? "https://m.a-bly.com/goods/" + it.product_id
-        : "https://www.musinsa.com/products/" + it.product_id + "?" + MUSINSA_CURATOR_QUERY;
+        : "https://www.musinsa.com/products/" + it.product_id;
       row.target = "_blank";
       row.rel = "noopener";
       row.className = "row" + (it.sold_out ? " sold-out" : "");

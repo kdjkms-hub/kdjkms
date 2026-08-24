@@ -107,11 +107,13 @@
     font-size: 0.8rem; font-weight: 600; color: var(--ink);
   }
   .selection-bar[hidden] { display: none; }
+  .selection-actions { display: flex; gap: 0.5rem; }
   .selection-bar button {
     border: 1px solid var(--line); background: var(--bg); color: var(--ink-muted);
     border-radius: 3px; padding: 0.3rem 0.6rem; font-size: 0.75rem; font-weight: 600; cursor: pointer;
   }
   .selection-bar button:hover { color: var(--ink); }
+  .selection-bar #publishBtn { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
   .list { display: flex; flex-direction: column; border-top: 1px solid var(--line); min-height: 12rem; }
 
@@ -193,7 +195,10 @@
 
   <div class="selection-bar" id="selectionBar" hidden>
     <span id="selectionCount">0개 선택됨</span>
-    <button type="button" id="clearSelectionBtn">선택 해제</button>
+    <span class="selection-actions">
+      <button type="button" id="publishBtn">발행</button>
+      <button type="button" id="clearSelectionBtn">선택 해제</button>
+    </span>
   </div>
 
   <div class="list" id="list"></div>
@@ -258,7 +263,7 @@
 
   var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
   var lastItems = [];
-  var selectedIds = {};
+  var selectedItems = {};
 
   var siteTabsEl = document.getElementById("siteTabs");
   var genderTabsEl = document.getElementById("genderTabs");
@@ -275,6 +280,7 @@
   var selectionBarEl = document.getElementById("selectionBar");
   var selectionCountEl = document.getElementById("selectionCount");
   var clearSelectionBtn = document.getElementById("clearSelectionBtn");
+  var publishBtn = document.getElementById("publishBtn");
   var lastRankMap = {};
 
   function logVisit() {
@@ -375,7 +381,7 @@
   }
 
   function updateSelectionBar() {
-    var count = Object.keys(selectedIds).length;
+    var count = Object.keys(selectedItems).length;
     selectionBarEl.hidden = count === 0;
     selectionCountEl.textContent = count + "개 선택됨";
   }
@@ -394,12 +400,13 @@
       var prevRank = lastRankMap[it.product_id];
       var delta = prevRank ? prevRank - rank : 0;
 
-      var isSelected = !!selectedIds[it.product_id];
-
-      var row = document.createElement("a");
-      row.href = state.site === "ably"
+      var isSelected = !!selectedItems[it.product_id];
+      var itemUrl = state.site === "ably"
         ? "https://m.a-bly.com/goods/" + it.product_id
         : "https://www.musinsa.com/products/" + it.product_id;
+
+      var row = document.createElement("a");
+      row.href = itemUrl;
       row.target = "_blank";
       row.rel = "noopener";
       row.className = "row" + (it.sold_out ? " sold-out" : "") + (isSelected ? " selected" : "");
@@ -412,12 +419,18 @@
       toggleEl.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        if (selectedIds[it.product_id]) {
-          delete selectedIds[it.product_id];
+        if (selectedItems[it.product_id]) {
+          delete selectedItems[it.product_id];
         } else {
-          selectedIds[it.product_id] = true;
+          selectedItems[it.product_id] = {
+            site: state.site,
+            brand: it.brand,
+            name: it.name,
+            price: it.price,
+            url: itemUrl
+          };
         }
-        var nowSelected = !!selectedIds[it.product_id];
+        var nowSelected = !!selectedItems[it.product_id];
         toggleEl.classList.toggle("checked", nowSelected);
         toggleEl.setAttribute("aria-pressed", nowSelected ? "true" : "false");
         row.classList.toggle("selected", nowSelected);
@@ -551,7 +564,7 @@
   });
 
   clearSelectionBtn.addEventListener("click", function () {
-    selectedIds = {};
+    selectedItems = {};
     updateSelectionBar();
     Array.prototype.forEach.call(listEl.querySelectorAll(".row.selected"), function (row) {
       row.classList.remove("selected");
@@ -564,6 +577,46 @@
 
   document.getElementById("wordmarkBtn").addEventListener("click", function () {
     window.location.reload();
+  });
+
+  var SITE_LABELS = { musinsa: "무신사", ably: "에이블리" };
+
+  function buildPublishText() {
+    var lines = ["[DropRank 선택 목록 - " + new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }) + "]", ""];
+    var idx = 0;
+    Object.keys(selectedItems).forEach(function (id) {
+      idx += 1;
+      var it = selectedItems[id];
+      lines.push(idx + ". [" + (SITE_LABELS[it.site] || it.site) + "] " + it.brand + " - " + it.name + " (" + (it.price || 0).toLocaleString("ko-KR") + "원)");
+      lines.push(it.url);
+      lines.push("");
+    });
+    return lines.join("\n").trim();
+  }
+
+  publishBtn.addEventListener("click", function () {
+    var text = buildPublishText();
+    var originalLabel = publishBtn.textContent;
+    function showCopied() {
+      publishBtn.textContent = "복사됨";
+      setTimeout(function () { publishBtn.textContent = originalLabel; }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showCopied).catch(function () {
+        publishBtn.textContent = "복사 실패";
+        setTimeout(function () { publishBtn.textContent = originalLabel; }, 1500);
+      });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try { document.execCommand("copy"); showCopied(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
   });
 
   renderFilterTabs();

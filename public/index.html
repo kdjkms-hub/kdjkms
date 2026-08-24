@@ -46,7 +46,12 @@
   .page { max-width: 900px; margin: 0 auto; padding: 2.25rem 1.25rem 4rem; }
 
   .masthead { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-  .wordmark { font-weight: 800; font-size: clamp(2rem, 6vw, 2.75rem); letter-spacing: -0.03em; line-height: 1; margin: 0; }
+  .wordmark {
+    font-weight: 800; font-size: clamp(2rem, 6vw, 2.75rem); letter-spacing: -0.03em; line-height: 1; margin: 0;
+    background: none; border: none; padding: 0; font-family: inherit; color: var(--ink); cursor: pointer;
+  }
+  .wordmark:hover { opacity: 0.85; }
+  .wordmark:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .wordmark span { color: var(--accent); }
   .masthead-meta {
     display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem;
@@ -165,7 +170,7 @@
 <body>
 <div class="page">
   <div class="masthead">
-    <p class="wordmark">Drop<span>Rank</span> <span style="font-size:0.4em; color:var(--ink-muted); font-weight:600;">LIVE</span></p>
+    <button type="button" id="wordmarkBtn" class="wordmark" aria-label="처음 상태로 새로고침">Drop<span>Rank</span> <span style="font-size:0.4em; color:var(--ink-muted); font-weight:600;">LIVE</span></button>
     <div class="masthead-meta">
       <span class="live-badge"><span class="live-dot" id="liveDot"></span><span id="liveText">연결 중</span></span>
       <span id="clock">--:--:--</span>
@@ -573,6 +578,10 @@
       btn.classList.remove("checked");
       btn.setAttribute("aria-pressed", "false");
     });
+  });
+
+  document.getElementById("wordmarkBtn").addEventListener("click", function () {
+    window.location.reload();
   });
 
   renderFilterTabs();

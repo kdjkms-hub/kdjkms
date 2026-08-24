@@ -28,6 +28,15 @@ ALLOWED_CATEGORY = {
     "004", "120", "101", "026", "017", "102", "106",
 }
 
+# Curator affiliate tracking, reverse-engineered from a curator share link
+# (https://www.musinsa.com/curator/goods/7irdzVZ5 -> products/595039?source=XML5UIKZ6...).
+# "source" looks like the reusable per-account code; verify clicks/conversions
+# show up in the Musinsa curator dashboard after this goes live.
+MUSINSA_CURATOR_QUERY = (
+    "utm_source=curator&utm_campaign=curator&utm_medium=if"
+    "&utm_content=curator_goodslink&source=XML5UIKZ6&pid=curator"
+)
+
 # a-bly requires a session token minted by a real browser (Cloudflare-gated
 # HTML pages). If requests start failing with 401, this token has expired
 # and needs to be re-captured from a live browser session and pasted in here.
@@ -231,7 +240,7 @@ def fetch_ranking(gf, category_code):
                     "discount": discount,
                     "soldOut": bool(info.get("isSoldOut")),
                     "image": image.get("url", ""),
-                    "url": on_click.get("url", ""),
+                    "url": (on_click.get("url", "") + "?" + MUSINSA_CURATOR_QUERY) if on_click.get("url") else "",
                     "labels": labels,
                     "note": notes[0] if notes else "",
                 })

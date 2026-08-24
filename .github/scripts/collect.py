@@ -17,7 +17,6 @@ SUPABASE_URL = "https://blykenseazunyrxkslkm.supabase.co"
 SUPABASE_KEY = "sb_publishable_YzZ7-HuyTWfwR9SQ_A6n7Q_imyR0Jjh"
 SUPABASE_TABLE = "ranking_snapshots"
 
-MIN_PRICE = 50000
 UPSTREAM_TIMEOUT_SECONDS = 12
 REQUEST_GAP_SECONDS = 3
 
@@ -113,9 +112,6 @@ def fetch_ranking(gf, category_code):
                 })
 
     items.sort(key=lambda x: x["rank"])
-    items = [it for it in items if it["price"] >= MIN_PRICE]
-    for idx, it in enumerate(items, start=1):
-        it["rank"] = idx
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 
@@ -193,9 +189,6 @@ def fetch_ably_ranking(category_code):
         })
 
     items.sort(key=lambda x: x["rank"])
-    items = [it for it in items if it["price"] >= MIN_PRICE]
-    for idx, it in enumerate(items, start=1):
-        it["rank"] = idx
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 

@@ -155,7 +155,7 @@
   </div>
 
   <div class="list-header">
-    <span id="listCaption">전체 · 전체 · 실시간 · 5만원 이상</span>
+    <span id="listCaption">무신사 · 전체 · 전체 · 실시간 · 전체</span>
     <span id="updatedAt">불러오는 중…</span>
   </div>
 
@@ -214,11 +214,12 @@
   };
 
   var PRICE_TIERS = [
+    { key: 0, label: "전체" },
     { key: 50000, label: "5만원 이상" },
     { key: 100000, label: "10만원 이상" }
   ];
 
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000, query: "" };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
   var lastItems = [];
 
   var siteTabsEl = document.getElementById("siteTabs");

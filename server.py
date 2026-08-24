@@ -56,7 +56,6 @@ ABLY_CATEGORIES = {
 
 CACHE_TTL_SECONDS = 45
 UPSTREAM_TIMEOUT_SECONDS = 12
-MIN_PRICE = 50000
 
 _cache = {}
 _cache_lock = threading.Lock()
@@ -238,9 +237,6 @@ def fetch_ranking(gf, category_code):
                 })
 
     items.sort(key=lambda x: x["rank"])
-    items = [it for it in items if it["price"] >= MIN_PRICE]
-    for idx, it in enumerate(items, start=1):
-        it["rank"] = idx
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 
@@ -283,9 +279,6 @@ def fetch_ably_ranking(category_code):
         })
 
     items.sort(key=lambda x: x["rank"])
-    items = [it for it in items if it["price"] >= MIN_PRICE]
-    for idx, it in enumerate(items, start=1):
-        it["rank"] = idx
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 

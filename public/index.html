@@ -166,7 +166,7 @@
     이 페이지는 로컬 서버(<code>server.py</code>)가 무신사의 공개 랭킹 데이터를 20~45초 주기로 불러와 표시하는
     개인용 데모입니다. 무신사의 공식 오픈 API가 아닌 웹사이트 내부 엔드포인트를 사용하며, 구조가 바뀌면 동작이
     멈출 수 있습니다. 실제 가격·재고·품절 여부는 클릭 시 이동하는 무신사 상품 페이지에서 다시 확인해주세요.
-    현재 판매가 50,000원 미만인 상품은 목록에서 제외하고, 남은 상품끼리 다시 순위를 매겨 보여줍니다.
+    최소 가격 필터를 선택하면 해당 기준 미만 상품은 제외하고 남은 상품끼리 다시 순위를 매겨 보여줍니다.
   </p>
 </div>
 
@@ -210,12 +210,13 @@
   };
 
   var PRICE_TIERS = [
+    { key: 0, label: "전체" },
     { key: 50000, label: "5만원 이상" },
     { key: 100000, label: "10만원 이상" }
   ];
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000, query: "" };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
   var lastRankMap = {};
   var lastItems = [];
   var pollTimer = null;

@@ -79,6 +79,19 @@
   .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .tab[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 
+  .search-box {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 0.88rem;
+    font-family: inherit;
+  }
+  .search-box::placeholder { color: var(--ink-muted); }
+  .search-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
   .list-header { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 0.6rem; color: var(--ink-muted); font-size: 0.78rem; }
   .list-header .err { color: var(--danger); font-weight: 600; }
 
@@ -138,6 +151,7 @@
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
     <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
+    <input type="search" id="searchInput" class="search-box" placeholder="브랜드 또는 상품명 검색" autocomplete="off" />
   </div>
 
   <div class="list-header">
@@ -204,13 +218,14 @@
     { key: 100000, label: "10만원 이상" }
   ];
 
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000 };
+  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 50000, query: "" };
   var lastItems = [];
 
   var siteTabsEl = document.getElementById("siteTabs");
   var genderTabsEl = document.getElementById("genderTabs");
   var priceTabsEl = document.getElementById("priceTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
+  var searchInputEl = document.getElementById("searchInput");
   var captionEl = document.getElementById("listCaption");
   var listEl = document.getElementById("list");
   var updatedEl = document.getElementById("updatedAt");
@@ -296,7 +311,12 @@
   }
 
   function renderFiltered() {
-    var filtered = lastItems.filter(function (it) { return it.price >= state.minPrice; });
+    var q = state.query.trim().toLowerCase();
+    var filtered = lastItems.filter(function (it) {
+      if (it.price < state.minPrice) return false;
+      if (!q) return true;
+      return (it.brand + " " + it.name).toLowerCase().indexOf(q) !== -1;
+    });
     filtered.forEach(function (it, idx) { it.rank = idx + 1; });
     renderRows(filtered);
   }
@@ -452,6 +472,12 @@
     var now = new Date();
     clockEl.textContent = now.toLocaleTimeString("ko-KR", { hour12: false, timeZone: "Asia/Seoul" });
   }
+
+  searchInputEl.addEventListener("input", function () {
+    state.query = searchInputEl.value;
+    lastRankMap = {};
+    renderFiltered();
+  });
 
   renderFilterTabs();
   loadLatest();

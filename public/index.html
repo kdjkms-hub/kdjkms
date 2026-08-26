@@ -192,6 +192,7 @@
 
   <div class="filters">
     <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
+    <div class="tabs" role="tablist" aria-label="랭킹 테마" id="sectionTabs"></div>
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
     <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
@@ -234,6 +235,25 @@
     { key: "W", label: "여성" },
     { key: "M", label: "남성" }
   ];
+  var MUSINSA_SECTIONS = [
+    { code: "200", label: "NEW" },
+    { code: "199", label: "전체" },
+    { code: "201", label: "급상승" },
+    { code: "2075", label: "오프라인" },
+    { code: "1770", label: "부티크" },
+    { code: "1827", label: "USED" },
+    { code: "2210", label: "아울렛" },
+    { code: "2211", label: "키즈" },
+    { code: "203", label: "스트리트" },
+    { code: "209", label: "미니멀" },
+    { code: "205", label: "프레피" },
+    { code: "206", label: "로맨틱" },
+    { code: "207", label: "걸코어" },
+    { code: "202", label: "캐주얼" },
+    { code: "204", label: "워크웨어" },
+    { code: "301", label: "레트로" },
+    { code: "210", label: "시크" }
+  ];
   var CATEGORIES_BY_SITE = {
     musinsa: [
       { code: "000", label: "전체" },
@@ -269,7 +289,7 @@
   ];
 
   var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "", searchMode: false };
+  var state = { site: "musinsa", section: "200", gf: "A", categoryCode: "000", minPrice: 0, query: "", searchMode: false };
   var lastRankMap = {};
   var lastItems = [];
   var searchItems = [];
@@ -279,6 +299,7 @@
   var POLL_MS = 20000;
 
   var siteTabsEl = document.getElementById("siteTabs");
+  var sectionTabsEl = document.getElementById("sectionTabs");
   var genderTabsEl = document.getElementById("genderTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
   var priceTabsEl = document.getElementById("priceTabs");
@@ -317,9 +338,11 @@
   function renderFilterTabs() {
     var isAbly = state.site === "ably";
     genderTabsEl.style.display = isAbly ? "none" : "";
+    sectionTabsEl.style.display = isAbly ? "none" : "";
 
     renderTabs(siteTabsEl, SITES, "key", state.site, function (key) {
       state.site = key;
+      state.section = "200";
       state.categoryCode = "000";
       state.gf = "A";
       state.query = "";
@@ -329,6 +352,17 @@
       lastItems = [];
       renderFilterTabs();
       loadRanking(false);
+    });
+    renderTabs(sectionTabsEl, MUSINSA_SECTIONS, "code", state.section, function (code) {
+      state.section = code;
+      state.categoryCode = "000";
+      lastRankMap = {};
+      renderFilterTabs();
+      if (state.searchMode) {
+        // search ignores theme/section; nothing to refresh
+      } else {
+        loadRanking(false);
+      }
     });
     renderTabs(genderTabsEl, GENDERS, "key", state.gf, function (key) {
       state.gf = key;
@@ -353,16 +387,17 @@
       renderFiltered(false);
     });
     var siteLabel = SITES.filter(function (s) { return s.key === state.site; })[0].label;
+    var sectionLabel = MUSINSA_SECTIONS.filter(function (s) { return s.code === state.section; })[0].label;
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
-    var newBadge = (!isAbly && !state.searchMode)
-      ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);vertical-align:1px;">NEW</span> '
+    var sectionBadge = (!isAbly && !state.searchMode)
+      ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);vertical-align:1px;">' + sectionLabel + '</span> '
       : "";
     if (state.searchMode) {
       captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + "\"" + state.query + "\" 검색 결과 · " + priceLabel;
     } else {
-      captionEl.innerHTML = newBadge + siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 최근 6개월 신상품 실시간 · " + priceLabel;
+      captionEl.innerHTML = sectionBadge + siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
     }
   }
 
@@ -600,7 +635,7 @@
     var endpoint = isAbly ? "/api/ably-ranking" : "/api/ranking";
     var params = isAbly
       ? new URLSearchParams({ categoryCode: state.categoryCode })
-      : new URLSearchParams({ gf: state.gf, categoryCode: state.categoryCode });
+      : new URLSearchParams({ gf: state.gf, categoryCode: state.categoryCode, section: state.section });
     fetch(endpoint + "?" + params.toString())
       .then(function (res) { return res.json().then(function (body) { return { ok: res.ok, body: body }; }); })
       .then(function (result) {

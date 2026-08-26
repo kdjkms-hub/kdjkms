@@ -182,6 +182,7 @@
 
   <div class="filters">
     <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
+    <div class="tabs" role="tablist" aria-label="랭킹 테마" id="sectionTabs"></div>
     <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
     <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
     <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
@@ -227,6 +228,25 @@
     { key: "W", label: "여성" },
     { key: "M", label: "남성" }
   ];
+  var MUSINSA_SECTIONS = [
+    { code: "200", label: "NEW" },
+    { code: "199", label: "전체" },
+    { code: "201", label: "급상승" },
+    { code: "2075", label: "오프라인" },
+    { code: "1770", label: "부티크" },
+    { code: "1827", label: "USED" },
+    { code: "2210", label: "아울렛" },
+    { code: "2211", label: "키즈" },
+    { code: "203", label: "스트리트" },
+    { code: "209", label: "미니멀" },
+    { code: "205", label: "프레피" },
+    { code: "206", label: "로맨틱" },
+    { code: "207", label: "걸코어" },
+    { code: "202", label: "캐주얼" },
+    { code: "204", label: "워크웨어" },
+    { code: "301", label: "레트로" },
+    { code: "210", label: "시크" }
+  ];
   var CATEGORIES_BY_SITE = {
     musinsa: [
       { code: "000", label: "전체" },
@@ -261,11 +281,12 @@
     { key: 100000, label: "10만원 이상" }
   ];
 
-  var state = { site: "musinsa", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
+  var state = { site: "musinsa", section: "200", gf: "A", categoryCode: "000", minPrice: 0, query: "" };
   var lastItems = [];
   var selectedItems = {};
 
   var siteTabsEl = document.getElementById("siteTabs");
+  var sectionTabsEl = document.getElementById("sectionTabs");
   var genderTabsEl = document.getElementById("genderTabs");
   var priceTabsEl = document.getElementById("priceTabs");
   var categoryTabsEl = document.getElementById("categoryTabs");
@@ -323,13 +344,22 @@
   function renderFilterTabs() {
     var isAbly = state.site === "ably";
     genderTabsEl.style.display = isAbly ? "none" : "";
+    sectionTabsEl.style.display = isAbly ? "none" : "";
 
     renderTabs(siteTabsEl, SITES, "key", state.site, function (key) {
       state.site = key;
+      state.section = "200";
       state.categoryCode = "000";
       state.gf = "A";
       lastRankMap = {};
       lastItems = [];
+      renderFilterTabs();
+      loadLatest();
+    });
+    renderTabs(sectionTabsEl, MUSINSA_SECTIONS, "code", state.section, function (code) {
+      state.section = code;
+      state.categoryCode = "000";
+      lastRankMap = {};
       renderFilterTabs();
       loadLatest();
     });
@@ -352,10 +382,14 @@
       renderFiltered();
     });
     var siteLabel = SITES.filter(function (s) { return s.key === state.site; })[0].label;
+    var sectionLabel = MUSINSA_SECTIONS.filter(function (s) { return s.code === state.section; })[0].label;
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
-    captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
+    var sectionBadge = !isAbly
+      ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);vertical-align:1px;">' + sectionLabel + '</span> '
+      : "";
+    captionEl.innerHTML = sectionBadge + siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
   }
 
   function renderFiltered() {
@@ -505,16 +539,18 @@
 
   function loadLatest() {
     var requestSite = state.site;
+    var requestSection = state.section;
     var requestGf = state.gf;
     var requestCategoryCode = state.categoryCode;
     var isAbly = requestSite === "ably";
     var base = SUPABASE_URL + "/rest/v1/" + TABLE_BY_SITE[requestSite];
-    var siteFilter = isAbly ? "" : "&gf=eq." + requestGf;
+    var siteFilter = isAbly ? "" : "&gf=eq." + requestGf + "&section_id=eq." + requestSection;
     var latestUrl = base + "?select=fetched_at" + siteFilter + "&category_code=eq." + requestCategoryCode +
       "&order=fetched_at.desc&limit=1";
 
     function stillCurrent() {
-      return requestSite === state.site && requestGf === state.gf && requestCategoryCode === state.categoryCode;
+      return requestSite === state.site && requestSection === state.section &&
+        requestGf === state.gf && requestCategoryCode === state.categoryCode;
     }
 
     fetch(latestUrl, { headers: sbHeaders() })

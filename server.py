@@ -53,7 +53,26 @@ def build_response(data, site, extra):
     out.update(extra)
     return out
 
-UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
+UPSTREAM_TEMPLATE = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/{}"
+MUSINSA_SECTIONS = {
+    "200": "NEW",
+    "199": "전체",
+    "201": "급상승",
+    "2075": "오프라인",
+    "1770": "부티크",
+    "1827": "USED",
+    "2210": "아울렛",
+    "2211": "키즈",
+    "203": "스트리트",
+    "209": "미니멀",
+    "205": "프레피",
+    "206": "로맨틱",
+    "207": "걸코어",
+    "202": "캐주얼",
+    "204": "워크웨어",
+    "301": "레트로",
+    "210": "시크",
+}
 UPSTREAM_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -118,7 +137,7 @@ except FileNotFoundError:
     _supabase = None
 
 
-def log_snapshot_to_supabase(gf, category_code, data):
+def log_snapshot_to_supabase(gf, category_code, data, section_id="200"):
     if not _supabase:
         return
     fetched_at = time.time()
@@ -127,6 +146,7 @@ def log_snapshot_to_supabase(gf, category_code, data):
         {
             "gf": gf,
             "category_code": category_code,
+            "section_id": section_id,
             "rank": it["rank"],
             "product_id": it["id"],
             "brand": it["brand"],
@@ -265,7 +285,7 @@ def fetch_search(keyword, gf):
     return {"items": items, "totalCount": total_count}
 
 
-def fetch_ranking(gf, category_code):
+def fetch_ranking(gf, category_code, section_id="200"):
     params = {
         "storeCode": "musinsa",
         "gf": gf,
@@ -279,7 +299,7 @@ def fetch_ranking(gf, category_code):
         "startRank": "1",
         "offset": "0",
     }
-    url = UPSTREAM + "?" + urllib.parse.urlencode(params)
+    url = UPSTREAM_TEMPLATE.format(section_id) + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers=UPSTREAM_HEADERS)
     with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT_SECONDS) as resp:
         raw = json.loads(resp.read().decode("utf-8"))
@@ -392,12 +412,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(query)
         gf = (qs.get("gf", ["A"])[0] or "A").upper()
         category_code = qs.get("categoryCode", ["000"])[0] or "000"
+        section_id = qs.get("section", ["200"])[0] or "200"
 
-        if gf not in ALLOWED_GF or category_code not in ALLOWED_CATEGORY:
+        if gf not in ALLOWED_GF or category_code not in ALLOWED_CATEGORY or section_id not in MUSINSA_SECTIONS:
             self._send_json({"error": "invalid parameters"}, 400)
             return
 
-        key = (gf, category_code)
+        key = (gf, category_code, section_id)
         now = time.time()
 
         with _cache_lock:
@@ -414,11 +435,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(build_response(cached["data"], "musinsa", {"fetchedAt": cached["ts"], "cached": True}))
                 return
             try:
-                data = fetch_ranking(gf, category_code)
+                data = fetch_ranking(gf, category_code, section_id)
                 ts = time.time()
                 with _cache_lock:
                     _cache[key] = {"ts": ts, "data": data}
-                log_snapshot_to_supabase(gf, category_code, data)
+                log_snapshot_to_supabase(gf, category_code, data, section_id)
                 self._send_json(build_response(data, "musinsa", {"fetchedAt": ts, "cached": False}))
             except Exception as exc:
                 if cached:
@@ -691,21 +712,28 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 BACKGROUND_REQUEST_GAP_SECONDS = 3
 BACKGROUND_CYCLE_REST_SECONDS = 20
+# NEW (200) gets full category depth (matches the original scope). The other
+# 16 themes are collected at category=000 (전체) only, to keep total request
+# volume against Musinsa reasonable.
 BACKGROUND_TARGETS = [
-    (gf, category_code) for gf in sorted(ALLOWED_GF) for category_code in sorted(ALLOWED_CATEGORY)
+    (gf, category_code, "200")
+    for gf in sorted(ALLOWED_GF) for category_code in sorted(ALLOWED_CATEGORY)
+] + [
+    (gf, "000", section_id)
+    for gf in sorted(ALLOWED_GF) for section_id in sorted(MUSINSA_SECTIONS) if section_id != "200"
 ]
 
 
 def background_collector():
     while True:
-        for gf, category_code in BACKGROUND_TARGETS:
+        for gf, category_code, section_id in BACKGROUND_TARGETS:
             try:
-                data = fetch_ranking(gf, category_code)
+                data = fetch_ranking(gf, category_code, section_id)
                 with _cache_lock:
-                    _cache[(gf, category_code)] = {"ts": time.time(), "data": data}
-                log_snapshot_to_supabase(gf, category_code, data)
+                    _cache[(gf, category_code, section_id)] = {"ts": time.time(), "data": data}
+                log_snapshot_to_supabase(gf, category_code, data, section_id)
             except Exception as exc:
-                print("background collector error:", gf, category_code, exc)
+                print("background collector error:", gf, category_code, section_id, exc)
             time.sleep(BACKGROUND_REQUEST_GAP_SECONDS)
         for category_code in sorted(ABLY_CATEGORIES):
             try:

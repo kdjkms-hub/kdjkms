@@ -3,7 +3,26 @@ import time
 import urllib.parse
 import urllib.request
 
-UPSTREAM = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/200"
+UPSTREAM_TEMPLATE = "https://client.musinsa.com/api/home/web/v5/pans/ranking/sections/{}"
+MUSINSA_SECTIONS = {
+    "200": "NEW",
+    "199": "전체",
+    "201": "급상승",
+    "2075": "오프라인",
+    "1770": "부티크",
+    "1827": "USED",
+    "2210": "아울렛",
+    "2211": "키즈",
+    "203": "스트리트",
+    "209": "미니멀",
+    "205": "프레피",
+    "206": "로맨틱",
+    "207": "걸코어",
+    "202": "캐주얼",
+    "204": "워크웨어",
+    "301": "레트로",
+    "210": "시크",
+}
 UPSTREAM_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -54,7 +73,7 @@ ABLY_CATEGORIES = {
 }
 
 
-def fetch_ranking(gf, category_code):
+def fetch_ranking(gf, category_code, section_id="200"):
     params = {
         "storeCode": "musinsa",
         "gf": gf,
@@ -68,7 +87,7 @@ def fetch_ranking(gf, category_code):
         "startRank": "1",
         "offset": "0",
     }
-    url = UPSTREAM + "?" + urllib.parse.urlencode(params)
+    url = UPSTREAM_TEMPLATE.format(section_id) + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers=UPSTREAM_HEADERS)
     with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT_SECONDS) as resp:
         raw = json.loads(resp.read().decode("utf-8"))
@@ -115,12 +134,13 @@ def fetch_ranking(gf, category_code):
     return {"items": items, "sourceUpdatedAt": source_updated_at}
 
 
-def log_snapshot(gf, category_code, data):
+def log_snapshot(gf, category_code, data, section_id="200"):
     source_updated_at = data.get("sourceUpdatedAt")
     rows = [
         {
             "gf": gf,
             "category_code": category_code,
+            "section_id": section_id,
             "rank": it["rank"],
             "product_id": it["id"],
             "brand": it["brand"],
@@ -231,14 +251,28 @@ def log_ably_snapshot(category_code, data):
 
 
 def main():
+    # NEW (200) gets full category depth. The other 16 themes are collected
+    # at category=000 (전체) only, to keep request volume reasonable.
     for gf in ALL_GF:
         for category_code in ALL_CATEGORY:
             try:
-                data = fetch_ranking(gf, category_code)
-                log_snapshot(gf, category_code, data)
-                print(f"ok {gf} {category_code} items={len(data['items'])}")
+                data = fetch_ranking(gf, category_code, "200")
+                log_snapshot(gf, category_code, data, "200")
+                print(f"ok {gf} {category_code} 200 items={len(data['items'])}")
             except Exception as exc:
-                print(f"error {gf} {category_code}: {exc}")
+                print(f"error {gf} {category_code} 200: {exc}")
+            time.sleep(REQUEST_GAP_SECONDS)
+
+    for gf in ALL_GF:
+        for section_id in MUSINSA_SECTIONS:
+            if section_id == "200":
+                continue
+            try:
+                data = fetch_ranking(gf, "000", section_id)
+                log_snapshot(gf, "000", data, section_id)
+                print(f"ok {gf} 000 {section_id} items={len(data['items'])}")
+            except Exception as exc:
+                print(f"error {gf} 000 {section_id}: {exc}")
             time.sleep(REQUEST_GAP_SECONDS)
 
     for category_code in ABLY_CATEGORIES:

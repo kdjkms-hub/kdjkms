@@ -218,6 +218,8 @@
     개인용 데모입니다. 무신사의 공식 오픈 API가 아닌 웹사이트 내부 엔드포인트를 사용하며, 구조가 바뀌면 동작이
     멈출 수 있습니다. 실제 가격·재고·품절 여부는 클릭 시 이동하는 무신사 상품 페이지에서 다시 확인해주세요.
     최소 가격 필터를 선택하면 해당 기준 미만 상품은 제외하고 남은 상품끼리 다시 순위를 매겨 보여줍니다.
+    무신사 랭킹은 "NEW"(최근 6개월 이내 발매된 신상품) 기준이에요 — 무신사에는 전체·급상승·USED 등 다른
+    랭킹 테마도 있지만, 지금은 NEW만 연동되어 있어요.
   </p>
 </div>
 
@@ -354,10 +356,13 @@
     var genderLabel = GENDERS.filter(function (g) { return g.key === state.gf; })[0].label;
     var catLabel = CATEGORIES_BY_SITE[state.site].filter(function (c) { return c.code === state.categoryCode; })[0].label;
     var priceLabel = PRICE_TIERS.filter(function (p) { return p.key === state.minPrice; })[0].label;
+    var newBadge = (!isAbly && !state.searchMode)
+      ? '<span class="badge" style="background:var(--accent);color:var(--accent-ink);vertical-align:1px;">NEW</span> '
+      : "";
     if (state.searchMode) {
       captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + "\"" + state.query + "\" 검색 결과 · " + priceLabel;
     } else {
-      captionEl.textContent = siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 실시간 · " + priceLabel;
+      captionEl.innerHTML = newBadge + siteLabel + " · " + (isAbly ? "" : genderLabel + " · ") + catLabel + " · 최근 6개월 신상품 실시간 · " + priceLabel;
     }
   }
 

@@ -443,6 +443,7 @@
     var q = state.query.trim().toLowerCase();
     var source = state.searchMode ? searchItems : lastItems;
     var filtered = source.filter(function (it) {
+      if (it.soldOut) return false;
       if (it.price < state.minPrice) return false;
       if (state.searchMode) return true;
       if (!q) return true;

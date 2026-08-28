@@ -412,6 +412,7 @@
   function renderFiltered() {
     var q = state.query.trim().toLowerCase();
     var filtered = lastItems.filter(function (it) {
+      if (it.sold_out) return false;
       if (it.price < state.minPrice) return false;
       if (!q) return true;
       return (it.brand + " " + it.name).toLowerCase().indexOf(q) !== -1;

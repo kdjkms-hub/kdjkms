@@ -70,7 +70,14 @@
 
   .tear { margin: 1.5rem 0 1.25rem; border: none; border-top: 1.5px dashed var(--line); }
 
-  .filters { display: flex; flex-direction: column; gap: 0.55rem; }
+  .filters { display: flex; flex-direction: column; gap: 0.85rem; }
+  .filter-quickrow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; }
+  .filter-quickrow .divider { width: 1px; align-self: stretch; background: var(--line); }
+  .filter-group { display: flex; flex-direction: column; gap: 0.35rem; }
+  .filter-label {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-muted);
+  }
   .segmented { display: inline-flex; gap: 0.3rem; }
   .tabs { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: thin; }
   .tab {
@@ -191,11 +198,21 @@
   <hr class="tear" />
 
   <div class="filters">
-    <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
-    <div class="tabs" role="tablist" aria-label="랭킹 테마" id="sectionTabs"></div>
-    <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
-    <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
-    <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
+    <div class="filter-quickrow">
+      <div class="segmented" role="tablist" aria-label="사이트" id="siteTabs"></div>
+      <span class="divider" aria-hidden="true"></span>
+      <div class="segmented" role="tablist" aria-label="성별" id="genderTabs"></div>
+      <span class="divider" aria-hidden="true"></span>
+      <div class="segmented" role="tablist" aria-label="최소 가격" id="priceTabs"></div>
+    </div>
+    <div class="filter-group" id="sectionGroup">
+      <span class="filter-label">테마</span>
+      <div class="tabs" role="tablist" aria-label="랭킹 테마" id="sectionTabs"></div>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">카테고리</span>
+      <div class="tabs" role="tablist" aria-label="카테고리" id="categoryTabs"></div>
+    </div>
     <input type="search" id="searchInput" class="search-box" placeholder="브랜드 또는 상품명 검색" autocomplete="off" />
   </div>
 
@@ -338,7 +355,7 @@
   function renderFilterTabs() {
     var isAbly = state.site === "ably";
     genderTabsEl.style.display = isAbly ? "none" : "";
-    sectionTabsEl.style.display = isAbly ? "none" : "";
+    document.getElementById("sectionGroup").style.display = isAbly ? "none" : "";
 
     renderTabs(siteTabsEl, SITES, "key", state.site, function (key) {
       state.site = key;
